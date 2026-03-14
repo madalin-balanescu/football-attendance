@@ -119,20 +119,71 @@
                 </button>
               </div>
             </div>
-            <h1>Prezenta saptamanala la fotbal</h1>
-            <p class="lead">
-              Completeaza formularul pentru a te inscrie la meciul din saptamana aceasta.
-              Poti trimite maximum 2 persoane intr-o singura inscriere.
-            </p>
-            <p class="schedule-callout">
-              Inscrierile incep in fiecare joi la ora 12:00.
-            </p>
+            <div class="match-hero">
+              <div class="match-copy">
+                <p class="match-kicker">Meciul acestei saptamani</p>
+                <h1>Prezenta saptamanala la fotbal</h1>
+                <p class="lead">
+                  Completeaza formularul pentru a te inscrie la meciul din saptamana aceasta.
+                  Poti trimite maximum 2 persoane intr-o singura inscriere.
+                </p>
+                <p class="schedule-callout">
+                  Inscrierile incep in fiecare joi la ora 12:00.
+                </p>
+              </div>
+
+              <div class="match-date-card">
+                <span class="match-date-label">Data de joc</span>
+                <strong id="match-date-display">13 Mar 2026</strong>
+                <span class="match-date-subtitle">Friday football night</span>
+              </div>
+            </div>
             <p id="signup-window-message" class="window-status-callout hidden" aria-live="polite"></p>
+
+            <section class="live-board">
+              <div class="live-board-header">
+                <div>
+                  <p class="board-label">Stare inscrieri</p>
+                  <h2 id="signup-state-title" class="board-state-title">Open now</h2>
+                </div>
+                <span id="signup-state-badge" class="signup-state-badge">Deschis</span>
+              </div>
+
+              <div class="board-stats">
+                <article class="stat-card">
+                  <span class="stat-label">Confirmati</span>
+                  <strong id="confirmed-counter">0 / 18</strong>
+                </article>
+                <article class="stat-card">
+                  <span class="stat-label">Locuri ramase</span>
+                  <strong id="spots-left-counter">18</strong>
+                </article>
+                <article class="stat-card">
+                  <span class="stat-label">Lista asteptare</span>
+                  <strong id="waiting-counter">0</strong>
+                </article>
+              </div>
+
+              <div class="progress-block">
+                <div class="progress-copy">
+                  <span>Ritmul inscrierilor</span>
+                  <strong id="progress-caption">0 din 18 locuri confirmate</strong>
+                </div>
+                <div class="progress-track" aria-hidden="true">
+                  <div id="progress-fill" class="progress-fill"></div>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
 
         <div class="content-grid">
           <form id="attendance-form" class="signup-card">
+            <div class="action-card-head">
+              <span class="action-pill">Rezerva-ti locul</span>
+              <h3>Trimite prezenta pentru tine sau pentru inca un coleg</h3>
+              <p>Completezi rapid, iar lista se actualizeaza instant in ordinea inscrierii.</p>
+            </div>
             <div class="form-controls-shell">
               <div id="form-locked-overlay" class="form-locked-overlay hidden" aria-hidden="true">
                 <div class="form-locked-card">
@@ -169,6 +220,11 @@
               </button>
             </div>
 
+            <div id="success-panel" class="success-panel hidden" aria-live="polite">
+              <strong>Loc rezervat</strong>
+              <span>Inscrierea a fost trimisa cu succes. Verifica pozitia din lista din dreapta.</span>
+            </div>
+
             <div class="hint-box">
               Primele 18 persoane inscrise apar cu verde. Restul raman pe lista de asteptare,
               marcati cu galben.
@@ -182,6 +238,7 @@
               <div>
                 <p class="eyebrow">Lista curenta</p>
                 <h2>Prezenta pentru <span id="week-label">saptamana curenta</span></h2>
+                <p class="table-subtitle">Ordinea inscrierii decide cine intra direct si cine ramane pe lista de asteptare.</p>
               </div>
               <div class="legend">
                 <span class="legend-pill confirmed">Top 18</span>

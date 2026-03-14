@@ -10,7 +10,16 @@ const formControlsShell = document.querySelector(".form-controls-shell");
 const formLockedOverlay = document.getElementById("form-locked-overlay");
 const tableBody = document.getElementById("attendance-table-body");
 const weekLabel = document.getElementById("week-label");
+const matchDateDisplay = document.getElementById("match-date-display");
 const emptyStateTemplate = document.getElementById("empty-state-template");
+const signupStateTitle = document.getElementById("signup-state-title");
+const signupStateBadge = document.getElementById("signup-state-badge");
+const confirmedCounter = document.getElementById("confirmed-counter");
+const spotsLeftCounter = document.getElementById("spots-left-counter");
+const waitingCounter = document.getElementById("waiting-counter");
+const progressCaption = document.getElementById("progress-caption");
+const progressFill = document.getElementById("progress-fill");
+const successPanel = document.getElementById("success-panel");
 const adminPanel = document.getElementById("admin-panel");
 const adminLoginForm = document.getElementById("admin-login-form");
 const adminPasswordInput = document.getElementById("admin-password");
@@ -37,6 +46,7 @@ let isAdminExpanded = false;
 let isSignupWindowOpen = true;
 let currentSignupMode = "auto";
 let isScheduleOpen = true;
+let lastSeenRegistrationId = null;
 
 function formatRegistrationTime(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(value);
@@ -85,10 +95,52 @@ function updateSignupModeButtons() {
   autoModeButton.disabled = currentSignupMode === "auto";
 }
 
+function updateLiveBoard(registrations = []) {
+  const confirmed = Math.min(registrations.length, 18);
+  const waiting = Math.max(registrations.length - 18, 0);
+  const spotsLeft = Math.max(18 - confirmed, 0);
+  const progressPercent = Math.min((confirmed / 18) * 100, 100);
+
+  confirmedCounter.textContent = `${confirmed} / 18`;
+  spotsLeftCounter.textContent = `${spotsLeft}`;
+  waitingCounter.textContent = `${waiting}`;
+  progressCaption.textContent = `${confirmed} din 18 locuri confirmate`;
+  progressFill.style.width = `${progressPercent}%`;
+
+  let title = "Closed";
+  let badge = "Inchis";
+
+  if (currentSignupMode === "force_open" || isSignupWindowOpen) {
+    if (spotsLeft <= 3 && confirmed > 0) {
+      title = "Almost full";
+      badge = "Aproape plin";
+    } else {
+      title = "Open now";
+      badge = "Deschis";
+    }
+  } else if (waiting > 0) {
+    title = "Waiting list";
+    badge = "Asteptare";
+  }
+
+  signupStateTitle.textContent = title;
+  signupStateBadge.textContent = badge;
+}
+
+function flashSuccessPanel(message) {
+  successPanel.classList.remove("hidden");
+  const detail = successPanel.querySelector("span");
+  detail.textContent = message;
+  window.clearTimeout(flashSuccessPanel.timeoutId);
+  flashSuccessPanel.timeoutId = window.setTimeout(() => {
+    successPanel.classList.add("hidden");
+  }, 3200);
+}
+
 function updateSignupWindowState(signupWindow) {
   if (!signupWindow) {
     signupWindowMessage.classList.add("hidden");
-    updatePlaceholderButtonState();
+    updateSignupModeButtons();
     return;
   }
 
@@ -115,6 +167,11 @@ function updateSignupWindowState(signupWindow) {
 
 function renderRows(registrations) {
   tableBody.innerHTML = "";
+  updateLiveBoard(registrations);
+
+  const newestRegistrationId = registrations.length ? registrations[registrations.length - 1].id : null;
+  const shouldAnimateNewest = newestRegistrationId !== null && newestRegistrationId !== lastSeenRegistrationId;
+  lastSeenRegistrationId = newestRegistrationId;
 
   if (!registrations.length) {
     const content = emptyStateTemplate.content.cloneNode(true);
@@ -127,6 +184,9 @@ function renderRows(registrations) {
   registrations.forEach((registration) => {
     const row = document.createElement("tr");
     row.className = registration.status;
+    if (shouldAnimateNewest && registration.id === newestRegistrationId) {
+      row.classList.add("new-entry");
+    }
 
     const positionCell = document.createElement("td");
     positionCell.dataset.label = "Pozitie";
@@ -177,6 +237,7 @@ async function loadRegistrations() {
 
   const payload = await response.json();
   weekLabel.textContent = payload.weekLabel;
+  matchDateDisplay.textContent = payload.weekLabel;
   updateSignupWindowState(payload.signupWindow);
   renderRows(payload.registrations);
 }
@@ -245,9 +306,11 @@ async function submitRegistration(event) {
 
     form.reset();
     weekLabel.textContent = payload.weekLabel;
+    matchDateDisplay.textContent = payload.weekLabel;
     updateSignupWindowState(payload.signupWindow);
     renderRows(payload.registrations);
     formMessage.textContent = payload.message;
+    flashSuccessPanel("Inscrierea este live in tabel si a fost marcata in ordinea sosirii.");
   } catch (error) {
     formMessage.textContent = error.message;
   } finally {
@@ -308,6 +371,7 @@ async function clearRegistrations(endpoint, triggerButton) {
     }
 
     weekLabel.textContent = payload.weekLabel;
+    matchDateDisplay.textContent = payload.weekLabel;
     setAdminAuthenticated(Boolean(payload.authenticated));
     updateSignupWindowState(payload.signupWindow);
     renderRows(payload.registrations);
@@ -342,6 +406,7 @@ async function setSignupMode(mode) {
     }
 
     weekLabel.textContent = payload.weekLabel;
+    matchDateDisplay.textContent = payload.weekLabel;
     setAdminAuthenticated(Boolean(payload.authenticated));
     updateSignupWindowState(payload.signupWindow);
     renderRows(payload.registrations);
@@ -376,6 +441,7 @@ async function deleteOneRegistration(registrationId, triggerButton) {
     }
 
     weekLabel.textContent = payload.weekLabel;
+    matchDateDisplay.textContent = payload.weekLabel;
     setAdminAuthenticated(Boolean(payload.authenticated));
     updateSignupWindowState(payload.signupWindow);
     renderRows(payload.registrations);
