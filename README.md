@@ -70,3 +70,46 @@ Important:
 
 - Existing data stored in the old SQLite file on Render will not be copied automatically into PostgreSQL.
 - New signups after redeploy will go into Postgres.
+
+## Admin panel
+
+You can enable an admin panel inside the page by setting `ADMIN_PASSWORD`.
+
+Locally:
+
+```bash
+export ADMIN_PASSWORD="choose-a-strong-password"
+python3 server.py
+```
+
+On Render:
+
+1. Open your web service.
+2. Go to `Environment`.
+3. Add `ADMIN_PASSWORD`.
+4. Redeploy the service.
+
+After that, the page will show an admin area where you can:
+
+- log in as admin
+- clear the current week
+- clear all registrations
+- delete a single registration directly from the table
+
+## Clear the attendance table
+
+You can clear registrations with a command instead of touching the database manually:
+
+```bash
+python3 server.py clear-week
+```
+
+That deletes only the current week's registrations.
+
+To delete everything from all weeks:
+
+```bash
+python3 server.py clear-all
+```
+
+On Render, you can run the same command from the service shell.

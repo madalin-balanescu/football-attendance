@@ -78,11 +78,53 @@
                     <th>Ora/minutul/secunda</th>
                     <th>Nume</th>
                     <th>Status</th>
+                    <th id="admin-actions-header" class="hidden">Admin</th>
                   </tr>
                 </thead>
                 <tbody id="attendance-table-body"></tbody>
               </table>
             </div>
+
+            <section class="admin-panel" id="admin-panel">
+              <div class="admin-copy">
+                <p class="eyebrow">Admin</p>
+                <h3>Administrare inscrieri</h3>
+                <p>
+                  Autentifica-te ca admin pentru a sterge lista saptamanii curente sau toate
+                  inscrierile din baza de date.
+                </p>
+              </div>
+
+              <form id="admin-login-form" class="admin-login-form">
+                <label class="field compact-field">
+                  <span>Parola admin</span>
+                  <input
+                    id="admin-password"
+                    name="adminPassword"
+                    type="password"
+                    placeholder="Introdu parola"
+                    autocomplete="current-password"
+                  />
+                </label>
+                <button id="admin-login-button" type="submit" class="secondary-button">
+                  Intra in panoul admin
+                </button>
+              </form>
+
+              <div id="admin-actions" class="admin-actions hidden">
+                <button id="clear-week-button" type="button" class="secondary-button">
+                  Sterge saptamana curenta
+                </button>
+                <button id="clear-all-button" type="button" class="danger-button">
+                  Sterge tot istoricul
+                </button>
+                <button id="admin-logout-button" type="button" class="ghost-button">
+                  Delogare admin
+                </button>
+              </div>
+
+              <p id="admin-message" class="form-message" aria-live="polite"></p>
+            </section>
           </section>
         </div>
       </section>
