@@ -478,7 +478,7 @@ button:disabled {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 640px;
+  table-layout: fixed;
 }
 
 th,
@@ -494,6 +494,27 @@ th {
   letter-spacing: 0.04em;
   color: var(--muted);
   background: var(--thead);
+}
+
+.time-column,
+.time-cell {
+  width: 120px;
+  white-space: nowrap;
+}
+
+th:first-child,
+td:first-child {
+  width: 52px;
+}
+
+th:nth-child(3),
+td:nth-child(3) {
+  width: auto;
+}
+
+th:nth-child(4),
+td:nth-child(4) {
+  width: 120px;
 }
 
 tbody tr.confirmed {
@@ -789,77 +810,46 @@ tr.waiting .status-badge {
   }
 
   .table-wrap {
-    overflow: visible;
+    overflow-x: auto;
     margin-inline: 0;
-    border: 0;
-    border-radius: 0;
-  }
-
-  table,
-  thead,
-  tbody,
-  tr,
-  td {
-    display: block;
+    border: 1px solid var(--line);
+    border-radius: 16px;
   }
 
   table {
     min-width: 0;
+    table-layout: fixed;
   }
 
-  thead {
-    display: none;
-  }
-
-  tbody {
-    display: grid;
-    gap: 12px;
-  }
-
-  tbody tr {
-    border: 1px solid var(--line);
-    border-radius: 18px;
-    overflow: hidden;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-  }
-
-  tbody tr.confirmed,
-  tbody tr.waiting {
-    background: transparent;
-  }
-
+  th,
   td {
-    display: grid;
-    grid-template-columns: 92px minmax(0, 1fr);
-    gap: 12px;
-    align-items: center;
-    padding: 12px 14px;
-    font-size: 0.92rem;
-    border-bottom: 1px solid var(--line);
-    background: var(--card-solid);
+    padding: 10px 8px;
+    font-size: 0.8rem;
   }
 
-  td:last-child {
-    border-bottom: 0;
+  th {
+    font-size: 0.66rem;
   }
 
-  td::before {
-    content: attr(data-label);
+  th:first-child,
+  td:first-child {
+    width: 40px;
+  }
+
+  .time-column,
+  .time-cell {
+    width: 96px;
     font-size: 0.74rem;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--muted);
   }
 
-  .table-action-cell {
-    text-align: left;
+  td:nth-child(3) {
+    word-break: break-word;
   }
 
   .table-delete-button {
     width: auto;
-    padding: 9px 12px;
-    font-size: 0.76rem;
+    padding: 7px 9px;
+    font-size: 0.68rem;
   }
 
   .admin-popover {
@@ -934,10 +924,38 @@ tr.waiting .status-badge {
     margin-inline: 0;
   }
 
+  table {
+    table-layout: auto;
+  }
+
+  th,
   td {
-    grid-template-columns: 78px minmax(0, 1fr);
-    gap: 10px;
-    padding: 11px 12px;
-    font-size: 0.88rem;
+    padding: 9px 6px;
+    font-size: 0.74rem;
+  }
+
+  th {
+    font-size: 0.6rem;
+  }
+
+  th:first-child,
+  td:first-child {
+    width: 34px;
+  }
+
+  .time-column,
+  .time-cell {
+    width: 86px;
+    font-size: 0.68rem;
+  }
+
+  .status-badge {
+    padding: 5px 7px;
+    font-size: 0.64rem;
+  }
+
+  .table-delete-button {
+    padding: 5px 7px;
+    font-size: 0.62rem;
   }
 }

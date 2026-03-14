@@ -29,6 +29,16 @@ let isAdminAuthenticated = false;
 let currentTheme = document.documentElement.dataset.theme || "light";
 let isAdminExpanded = false;
 
+function formatRegistrationTime(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(value);
+  if (!match) {
+    return value;
+  }
+
+  const [, , month, day, time] = match;
+  return `${day}.${month} ${time}`;
+}
+
 function applyTheme(theme) {
   currentTheme = theme;
   document.documentElement.dataset.theme = theme;
@@ -64,8 +74,9 @@ function renderRows(registrations) {
     positionCell.textContent = registration.position;
 
     const createdAtCell = document.createElement("td");
+    createdAtCell.className = "time-cell";
     createdAtCell.dataset.label = "Ora";
-    createdAtCell.textContent = registration.createdAt;
+    createdAtCell.textContent = formatRegistrationTime(registration.createdAt);
 
     const nameCell = document.createElement("td");
     nameCell.dataset.label = "Nume";
