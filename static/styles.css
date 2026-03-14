@@ -170,22 +170,22 @@ p {
 
 h1 {
   margin-bottom: 16px;
-  font-size: clamp(2rem, 3vw, 3.4rem);
-  line-height: 1.02;
+  font-size: clamp(1.6rem, 2.2vw, 2.6rem);
+  line-height: 1.04;
 }
 
 .lead {
   max-width: 100%;
   margin-bottom: 0;
-  font-size: clamp(1rem, 1.15vw, 1.25rem);
-  line-height: 1.45;
+  font-size: clamp(0.9rem, 0.92vw, 1rem);
+  line-height: 1.42;
   color: var(--muted);
 }
 
 .schedule-callout {
   margin-top: 18px;
   margin-bottom: 0;
-  font-size: clamp(1.15rem, 1.5vw, 1.55rem);
+  font-size: clamp(0.92rem, 1.02vw, 1.12rem);
   font-weight: 800;
   color: var(--blue);
 }
@@ -316,7 +316,7 @@ h1 {
 
 .hint-box {
   margin-top: 24px;
-  margin-bottom: 22px;
+  margin-bottom: 0;
   padding: 18px 20px;
   border-radius: 18px;
   background: var(--surface-tint);
@@ -498,8 +498,8 @@ button:disabled {
 }
 
 .form-message {
-  min-height: 24px;
-  margin: 16px 0 0;
+  min-height: 0;
+  margin: 8px 0 0;
   color: var(--muted);
   font-weight: 600;
 }
@@ -514,7 +514,7 @@ button:disabled {
 
 .table-header h2 {
   margin-bottom: 0;
-  font-size: clamp(1.4rem, 2vw, 2rem);
+  font-size: clamp(1.22rem, 1.6vw, 1.68rem);
   white-space: nowrap;
 }
 
@@ -849,7 +849,7 @@ tr.waiting .status-badge {
 
   .hint-box {
     margin-top: 20px;
-    margin-bottom: 16px;
+    margin-bottom: 0;
     padding: 15px 16px;
     border-radius: 16px;
     font-size: 0.94rem;
