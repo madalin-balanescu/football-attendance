@@ -23,6 +23,8 @@ const adminContent = document.getElementById("admin-content");
 const adminToggleIcon = document.getElementById("admin-toggle-icon");
 const themeToggle = document.getElementById("theme-toggle");
 const themeToggleLabel = document.getElementById("theme-toggle-label");
+const themeIconSun = document.getElementById("theme-icon-sun");
+const themeIconMoon = document.getElementById("theme-icon-moon");
 let isAdminAuthenticated = false;
 let currentTheme = document.documentElement.dataset.theme || "light";
 let isAdminExpanded = false;
@@ -32,6 +34,8 @@ function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   localStorage.setItem("theme", theme);
   themeToggleLabel.textContent = theme === "dark" ? "Light mode" : "Dark mode";
+  themeIconSun.classList.toggle("hidden", theme !== "dark");
+  themeIconMoon.classList.toggle("hidden", theme === "dark");
 }
 
 function setSubmissionLoading(isLoading) {
@@ -56,15 +60,19 @@ function renderRows(registrations) {
     row.className = registration.status;
 
     const positionCell = document.createElement("td");
+    positionCell.dataset.label = "Pozitie";
     positionCell.textContent = registration.position;
 
     const createdAtCell = document.createElement("td");
+    createdAtCell.dataset.label = "Ora";
     createdAtCell.textContent = registration.createdAt;
 
     const nameCell = document.createElement("td");
+    nameCell.dataset.label = "Nume";
     nameCell.textContent = registration.name;
 
     const statusCell = document.createElement("td");
+    statusCell.dataset.label = "Status";
     const badge = document.createElement("span");
     badge.className = "status-badge";
     badge.textContent = registration.status === "confirmed" ? "Confirmat" : "Asteptare";
@@ -75,6 +83,7 @@ function renderRows(registrations) {
     if (isAdminAuthenticated) {
       const actionCell = document.createElement("td");
       actionCell.className = "table-action-cell";
+      actionCell.dataset.label = "Admin";
 
       const deleteButton = document.createElement("button");
       deleteButton.type = "button";

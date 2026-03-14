@@ -86,10 +86,6 @@ body {
 }
 
 .hero-topbar {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  align-items: start;
   position: relative;
 }
 
@@ -97,17 +93,24 @@ body {
   max-width: 100%;
 }
 
+.hero-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
 .top-controls {
   display: flex;
-  align-items: start;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
 }
 
 .theme-toggle {
   width: auto;
-  min-width: 148px;
-  padding: 8px;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--text);
@@ -120,13 +123,34 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 130px;
-  min-height: 42px;
-  padding: 0 16px;
+  width: 42px;
+  height: 42px;
   border-radius: 999px;
   background: linear-gradient(135deg, rgba(47, 102, 232, 0.12), rgba(59, 130, 246, 0.22));
-  font-size: 0.92rem;
-  font-weight: 800;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .eyebrow {
@@ -454,6 +478,7 @@ button:disabled {
 table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 640px;
 }
 
 th,
@@ -524,28 +549,27 @@ tr.waiting .status-badge {
 }
 
 .admin-toggle-compact {
-  width: auto;
-  min-width: 104px;
-  padding: 8px 10px 8px 14px;
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  padding: 0;
   background: rgba(var(--white-rgb), 0.52);
   backdrop-filter: blur(12px);
 }
 
-.admin-toggle-label {
-  font-size: 0.92rem;
-  font-weight: 800;
-}
-
 .admin-toggle-icon {
+  position: absolute;
+  top: -4px;
+  right: -4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   background: var(--surface-tint);
   color: var(--surface-tint-text);
-  font-size: 1.25rem;
+  font-size: 0.9rem;
   font-weight: 700;
 }
 
@@ -619,12 +643,11 @@ tr.waiting .status-badge {
   }
 
   .hero-topbar {
-    flex-direction: column;
+    gap: 18px;
   }
 
-  .top-controls {
-    width: 100%;
-    justify-content: space-between;
+  .hero-meta-row {
+    align-items: flex-start;
   }
 
   .admin-popover {
@@ -644,5 +667,277 @@ tr.waiting .status-badge {
 
   .table-header h2 {
     white-space: normal;
+  }
+}
+
+@media (max-width: 700px) {
+  .page-shell {
+    width: min(100% - 16px, 1240px);
+    margin: 12px auto 20px;
+  }
+
+  .hero-card {
+    padding: 16px;
+    border-radius: 22px;
+  }
+
+  .hero-copy h1 {
+    margin-bottom: 12px;
+    font-size: clamp(1.9rem, 8.8vw, 2.5rem);
+    line-height: 1.04;
+  }
+
+  .lead {
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  .schedule-callout {
+    margin-top: 14px;
+    font-size: 1.12rem;
+    line-height: 1.35;
+  }
+
+  .top-controls {
+    gap: 8px;
+  }
+
+  .theme-toggle {
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 0;
+  }
+
+  .theme-toggle-track {
+    width: 38px;
+    height: 38px;
+  }
+
+  .admin-toggle-compact {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+  }
+
+  .icon-svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .admin-toggle-icon {
+    width: 17px;
+    height: 17px;
+    font-size: 0.8rem;
+  }
+
+  .content-grid {
+    gap: 16px;
+    margin-top: 24px;
+  }
+
+  .signup-card,
+  .table-card {
+    padding: 18px 14px;
+    border-radius: 22px;
+  }
+
+  .field {
+    gap: 8px;
+    margin-bottom: 16px;
+    font-size: 0.98rem;
+  }
+
+  .field input {
+    padding: 15px 14px;
+    border-radius: 14px;
+  }
+
+  .hint-box {
+    margin-bottom: 16px;
+    padding: 15px 16px;
+    border-radius: 16px;
+    font-size: 0.94rem;
+  }
+
+  button {
+    padding: 16px 18px;
+    font-size: 0.98rem;
+  }
+
+  .table-header {
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .table-header > div:first-child {
+    width: 100%;
+  }
+
+  .table-header h2 {
+    font-size: 1.22rem;
+    line-height: 1.2;
+  }
+
+  .legend {
+    gap: 8px;
+    width: 100%;
+  }
+
+  .legend-pill {
+    padding: 8px 12px;
+    font-size: 0.78rem;
+  }
+
+  .table-wrap {
+    overflow: visible;
+    margin-inline: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  table,
+  thead,
+  tbody,
+  tr,
+  td {
+    display: block;
+  }
+
+  table {
+    min-width: 0;
+  }
+
+  thead {
+    display: none;
+  }
+
+  tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  tbody tr {
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  }
+
+  tbody tr.confirmed,
+  tbody tr.waiting {
+    background: transparent;
+  }
+
+  td {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    padding: 12px 14px;
+    font-size: 0.92rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--card-solid);
+  }
+
+  td:last-child {
+    border-bottom: 0;
+  }
+
+  td::before {
+    content: attr(data-label);
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .table-action-cell {
+    text-align: left;
+  }
+
+  .table-delete-button {
+    width: auto;
+    padding: 9px 12px;
+    font-size: 0.76rem;
+  }
+
+  .admin-popover {
+    left: auto;
+    right: 0;
+    width: min(92vw, 360px);
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .admin-login-form,
+  .admin-actions {
+    gap: 10px;
+  }
+
+  .admin-actions > button,
+  .admin-login-form > button {
+    width: 100%;
+  }
+
+  .compact-field {
+    flex-basis: 100%;
+  }
+
+  .submission-overlay {
+    padding: 16px;
+  }
+
+  .submission-overlay-card {
+    padding: 28px 18px 24px;
+    border-radius: 24px;
+  }
+
+  .football-overlay-loader {
+    width: 84px;
+    height: 84px;
+    margin-bottom: 18px;
+    border-width: 5px;
+  }
+
+  .football-overlay-loader::after {
+    width: 68px;
+    bottom: -14px;
+  }
+
+  .submission-overlay-title {
+    font-size: 1.2rem;
+  }
+
+  .submission-overlay-text {
+    font-size: 0.92rem;
+  }
+}
+
+@media (max-width: 460px) {
+  .hero-meta-row {
+    align-items: center;
+  }
+
+  .eyebrow {
+    margin-bottom: 0;
+    font-size: 0.74rem;
+  }
+
+  .admin-popover {
+    left: 0;
+    right: 0;
+    width: 100%;
+  }
+
+  .table-wrap {
+    margin-inline: 0;
+  }
+
+  td {
+    grid-template-columns: 78px minmax(0, 1fr);
+    gap: 10px;
+    padding: 11px 12px;
+    font-size: 0.88rem;
   }
 }
