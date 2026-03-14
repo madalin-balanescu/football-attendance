@@ -98,9 +98,8 @@ def current_week_key(now: datetime | None = None) -> str:
 
 def week_label_from_key(week_key: str) -> str:
     year_text, week_text = week_key.split("-W")
-    week_start = datetime.fromisocalendar(int(year_text), int(week_text), 1)
-    week_end = week_start + timedelta(days=6)
-    return f"{week_start.strftime('%d %b %Y')} - {week_end.strftime('%d %b %Y')}"
+    friday = datetime.fromisocalendar(int(year_text), int(week_text), 5)
+    return friday.strftime("%d %b %Y")
 
 
 def sanitize_names(payload: dict[str, object]) -> list[str]:

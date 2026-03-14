@@ -2,6 +2,8 @@ const form = document.getElementById("attendance-form");
 const person1Input = document.getElementById("person1");
 const person2Input = document.getElementById("person2");
 const submitButton = document.getElementById("submit-button");
+const submitButtonLabel = submitButton.querySelector(".button-label");
+const submissionOverlay = document.getElementById("submission-overlay");
 const formMessage = document.getElementById("form-message");
 const tableBody = document.getElementById("attendance-table-body");
 const weekLabel = document.getElementById("week-label");
@@ -16,7 +18,27 @@ const clearAllButton = document.getElementById("clear-all-button");
 const adminLogoutButton = document.getElementById("admin-logout-button");
 const adminMessage = document.getElementById("admin-message");
 const adminActionsHeader = document.getElementById("admin-actions-header");
+const adminToggle = document.getElementById("admin-toggle");
+const adminContent = document.getElementById("admin-content");
+const adminToggleIcon = document.getElementById("admin-toggle-icon");
+const themeToggle = document.getElementById("theme-toggle");
+const themeToggleLabel = document.getElementById("theme-toggle-label");
 let isAdminAuthenticated = false;
+let currentTheme = document.documentElement.dataset.theme || "light";
+let isAdminExpanded = false;
+
+function applyTheme(theme) {
+  currentTheme = theme;
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem("theme", theme);
+  themeToggleLabel.textContent = theme === "dark" ? "Light mode" : "Dark mode";
+}
+
+function setSubmissionLoading(isLoading) {
+  submitButton.disabled = isLoading;
+  submitButtonLabel.textContent = isLoading ? "Se trimite..." : "Trimite inscrierea";
+  submissionOverlay.classList.toggle("hidden", !isLoading);
+}
 
 function renderRows(registrations) {
   tableBody.innerHTML = "";
@@ -105,12 +127,18 @@ async function loadAdminStatus() {
   setAdminAuthenticated(payload.authenticated);
 }
 
+function setAdminExpanded(expanded) {
+  isAdminExpanded = expanded;
+  adminContent.classList.toggle("hidden", !expanded);
+  adminToggle.setAttribute("aria-expanded", String(expanded));
+  adminToggleIcon.textContent = expanded ? "-" : "+";
+}
+
 async function submitRegistration(event) {
   event.preventDefault();
 
   formMessage.textContent = "";
-  submitButton.disabled = true;
-  submitButton.textContent = "Se trimite...";
+  setSubmissionLoading(true);
 
   try {
     const response = await fetch("/api/registrations", {
@@ -136,8 +164,7 @@ async function submitRegistration(event) {
   } catch (error) {
     formMessage.textContent = error.message;
   } finally {
-    submitButton.disabled = false;
-    submitButton.textContent = "Trimite inscrierea";
+    setSubmissionLoading(false);
   }
 }
 
@@ -246,8 +273,13 @@ async function logoutAdmin() {
   adminMessage.textContent = "Te-ai delogat din panoul de admin.";
 }
 
+function toggleTheme() {
+  applyTheme(currentTheme === "dark" ? "light" : "dark");
+}
+
 form.addEventListener("submit", submitRegistration);
 adminLoginForm.addEventListener("submit", loginAdmin);
+adminToggle.addEventListener("click", () => setAdminExpanded(!isAdminExpanded));
 clearWeekButton.addEventListener("click", () =>
   clearRegistrations("/api/admin/clear-week", clearWeekButton),
 );
@@ -255,6 +287,10 @@ clearAllButton.addEventListener("click", () =>
   clearRegistrations("/api/admin/clear-all", clearAllButton),
 );
 adminLogoutButton.addEventListener("click", logoutAdmin);
+themeToggle.addEventListener("click", toggleTheme);
+
+applyTheme(currentTheme);
+setAdminExpanded(false);
 
 loadAdminStatus().then(() => {
   loadRegistrations().catch((error) => {

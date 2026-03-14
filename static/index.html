@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prezenta saptamanala la fotbal</title>
+    <script>
+      (() => {
+        const storedTheme = localStorage.getItem("theme");
+        const theme =
+          storedTheme ||
+          (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,13 +24,78 @@
   <body>
     <main class="page-shell">
       <section class="hero-card">
-        <div class="hero-copy">
-          <p class="eyebrow">Inscriere saptamanala</p>
-          <h1>Prezenta saptamanala la fotbal</h1>
+        <div class="hero-topbar">
+          <div class="hero-copy">
+            <p class="eyebrow">Inscriere saptamanala</p>
+            <h1>Prezenta saptamanala la fotbal</h1>
           <p class="lead">
             Completeaza formularul pentru a te inscrie la meciul din saptamana aceasta.
             Poti trimite maximum 2 persoane intr-o singura inscriere.
           </p>
+          <p class="schedule-callout">
+            Inscrierile incep in fiecare joi la ora 12:00.
+          </p>
+        </div>
+
+          <div class="top-controls">
+            <section class="admin-panel hidden" id="admin-panel">
+              <button
+                id="admin-toggle"
+                type="button"
+                class="admin-toggle admin-toggle-compact"
+                aria-expanded="false"
+                aria-controls="admin-content"
+              >
+                <span class="admin-toggle-label">Admin</span>
+                <span id="admin-toggle-icon" class="admin-toggle-icon">+</span>
+              </button>
+
+              <div id="admin-content" class="admin-content admin-popover hidden">
+                <div class="admin-copy">
+                  <p>
+                    Autentifica-te ca admin pentru a sterge lista saptamanii curente sau toate
+                    inscrierile din baza de date.
+                  </p>
+                </div>
+
+                <form id="admin-login-form" class="admin-login-form">
+                  <label class="field compact-field">
+                    <span>Parola admin</span>
+                    <input
+                      id="admin-password"
+                      name="adminPassword"
+                      type="password"
+                      placeholder="Introdu parola"
+                      autocomplete="current-password"
+                    />
+                  </label>
+                  <button id="admin-login-button" type="submit" class="secondary-button">
+                    Intra in panoul admin
+                  </button>
+                </form>
+
+                <div id="admin-actions" class="admin-actions hidden">
+                  <button id="clear-week-button" type="button" class="secondary-button">
+                    Sterge saptamana curenta
+                  </button>
+                  <button id="clear-all-button" type="button" class="danger-button">
+                    Sterge tot istoricul
+                  </button>
+                  <button id="admin-logout-button" type="button" class="ghost-button">
+                    Delogare admin
+                  </button>
+                </div>
+
+                <p id="admin-message" class="form-message" aria-live="polite"></p>
+              </div>
+            </section>
+
+            <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Schimba tema">
+              <span class="theme-toggle-track">
+                <span id="theme-toggle-label">Dark mode</span>
+              </span>
+            </button>
+          </div>
         </div>
 
         <div class="content-grid">
@@ -33,7 +107,7 @@
                 name="person1"
                 type="text"
                 maxlength="80"
-                placeholder="Ex: Gabriel Condrea"
+                placeholder="Ex: Popescu Ion"
                 required
               />
             </label>
@@ -54,7 +128,9 @@
               marcati cu galben.
             </div>
 
-            <button id="submit-button" type="submit">Trimite inscrierea</button>
+            <button id="submit-button" type="submit">
+              <span class="button-label">Trimite inscrierea</span>
+            </button>
             <p id="form-message" class="form-message" aria-live="polite"></p>
           </form>
 
@@ -84,47 +160,6 @@
                 <tbody id="attendance-table-body"></tbody>
               </table>
             </div>
-
-            <section class="admin-panel" id="admin-panel">
-              <div class="admin-copy">
-                <p class="eyebrow">Admin</p>
-                <h3>Administrare inscrieri</h3>
-                <p>
-                  Autentifica-te ca admin pentru a sterge lista saptamanii curente sau toate
-                  inscrierile din baza de date.
-                </p>
-              </div>
-
-              <form id="admin-login-form" class="admin-login-form">
-                <label class="field compact-field">
-                  <span>Parola admin</span>
-                  <input
-                    id="admin-password"
-                    name="adminPassword"
-                    type="password"
-                    placeholder="Introdu parola"
-                    autocomplete="current-password"
-                  />
-                </label>
-                <button id="admin-login-button" type="submit" class="secondary-button">
-                  Intra in panoul admin
-                </button>
-              </form>
-
-              <div id="admin-actions" class="admin-actions hidden">
-                <button id="clear-week-button" type="button" class="secondary-button">
-                  Sterge saptamana curenta
-                </button>
-                <button id="clear-all-button" type="button" class="danger-button">
-                  Sterge tot istoricul
-                </button>
-                <button id="admin-logout-button" type="button" class="ghost-button">
-                  Delogare admin
-                </button>
-              </div>
-
-              <p id="admin-message" class="form-message" aria-live="polite"></p>
-            </section>
           </section>
         </div>
       </section>
@@ -135,6 +170,15 @@
         <td colspan="4">Nu exista inscrieri pentru saptamana aceasta inca.</td>
       </tr>
     </template>
+
+    <div id="submission-overlay" class="submission-overlay hidden" aria-hidden="true">
+      <div class="submission-overlay-card">
+        <div class="stadium-glow"></div>
+        <div class="football-overlay-loader"></div>
+        <p class="submission-overlay-title">Se trimite inscrierea...</p>
+        <p class="submission-overlay-text">Mingea e in joc. Te adaugam acum pe lista.</p>
+      </div>
+    </div>
 
     <script src="/app.js" defer></script>
   </body>
