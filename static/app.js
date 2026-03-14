@@ -5,6 +5,9 @@ const submitButton = document.getElementById("submit-button");
 const submitButtonLabel = submitButton.querySelector(".button-label");
 const submissionOverlay = document.getElementById("submission-overlay");
 const formMessage = document.getElementById("form-message");
+const signupWindowMessage = document.getElementById("signup-window-message");
+const formControlsShell = document.querySelector(".form-controls-shell");
+const formLockedOverlay = document.getElementById("form-locked-overlay");
 const tableBody = document.getElementById("attendance-table-body");
 const weekLabel = document.getElementById("week-label");
 const emptyStateTemplate = document.getElementById("empty-state-template");
@@ -13,6 +16,9 @@ const adminLoginForm = document.getElementById("admin-login-form");
 const adminPasswordInput = document.getElementById("admin-password");
 const adminLoginButton = document.getElementById("admin-login-button");
 const adminActions = document.getElementById("admin-actions");
+const forceOpenButton = document.getElementById("force-open-button");
+const togglePlaceholderButton = document.getElementById("toggle-placeholder-button");
+const autoModeButton = document.getElementById("auto-mode-button");
 const clearWeekButton = document.getElementById("clear-week-button");
 const clearAllButton = document.getElementById("clear-all-button");
 const adminLogoutButton = document.getElementById("admin-logout-button");
@@ -28,6 +34,9 @@ const themeIconMoon = document.getElementById("theme-icon-moon");
 let isAdminAuthenticated = false;
 let currentTheme = document.documentElement.dataset.theme || "light";
 let isAdminExpanded = false;
+let isSignupWindowOpen = true;
+let currentSignupMode = "auto";
+let isScheduleOpen = true;
 
 function formatRegistrationTime(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(value);
@@ -52,6 +61,56 @@ function setSubmissionLoading(isLoading) {
   submitButton.disabled = isLoading;
   submitButtonLabel.textContent = isLoading ? "Se trimite..." : "Trimite inscrierea";
   submissionOverlay.classList.toggle("hidden", !isLoading);
+}
+
+function setFormLocked(isLocked) {
+  formControlsShell.classList.toggle("is-locked", isLocked);
+  formLockedOverlay.classList.toggle("hidden", !isLocked);
+  person1Input.disabled = isLocked;
+  person2Input.disabled = isLocked;
+}
+
+async function parseJsonResponse(response) {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error("Serverul a trimis un raspuns invalid. Reincarca pagina.");
+  }
+}
+
+function updateSignupModeButtons() {
+  forceOpenButton.disabled = currentSignupMode === "force_open";
+  togglePlaceholderButton.disabled = currentSignupMode === "force_closed";
+  autoModeButton.disabled = currentSignupMode === "auto";
+}
+
+function updateSignupWindowState(signupWindow) {
+  if (!signupWindow) {
+    signupWindowMessage.classList.add("hidden");
+    updatePlaceholderButtonState();
+    return;
+  }
+
+  isSignupWindowOpen = Boolean(signupWindow.isOpen);
+  isScheduleOpen = Boolean(signupWindow.scheduleOpen);
+  currentSignupMode = String(signupWindow.mode || "auto");
+  const message = isSignupWindowOpen ? String(signupWindow.message || "").trim() : "";
+  signupWindowMessage.textContent = message;
+  signupWindowMessage.classList.toggle("hidden", !message);
+  signupWindowMessage.classList.toggle("is-open", isSignupWindowOpen);
+  signupWindowMessage.classList.toggle("is-closed", !isSignupWindowOpen);
+  setFormLocked(!isSignupWindowOpen);
+  updateSignupModeButtons();
+
+  if (!isSignupWindowOpen) {
+    submitButton.disabled = true;
+    submitButtonLabel.textContent = "Inscrierile sunt inchise";
+    return;
+  }
+
+  submitButton.disabled = false;
+  submitButtonLabel.textContent = "Trimite inscrierea";
 }
 
 function renderRows(registrations) {
@@ -118,6 +177,7 @@ async function loadRegistrations() {
 
   const payload = await response.json();
   weekLabel.textContent = payload.weekLabel;
+  updateSignupWindowState(payload.signupWindow);
   renderRows(payload.registrations);
 }
 
@@ -157,6 +217,11 @@ function setAdminExpanded(expanded) {
 async function submitRegistration(event) {
   event.preventDefault();
 
+  if (!isSignupWindowOpen) {
+    formMessage.textContent = signupWindowMessage.textContent;
+    return;
+  }
+
   formMessage.textContent = "";
   setSubmissionLoading(true);
 
@@ -172,13 +237,15 @@ async function submitRegistration(event) {
       }),
     });
 
-    const payload = await response.json();
+    const payload = await parseJsonResponse(response);
     if (!response.ok) {
+      updateSignupWindowState(payload.signupWindow);
       throw new Error(payload.error || "Inscrierea nu a putut fi salvata.");
     }
 
     form.reset();
     weekLabel.textContent = payload.weekLabel;
+    updateSignupWindowState(payload.signupWindow);
     renderRows(payload.registrations);
     formMessage.textContent = payload.message;
   } catch (error) {
@@ -206,7 +273,7 @@ async function loginAdmin(event) {
       }),
     });
 
-    const payload = await response.json();
+    const payload = await parseJsonResponse(response);
     if (!response.ok) {
       throw new Error(payload.error || "Autentificarea a esuat.");
     }
@@ -232,7 +299,7 @@ async function clearRegistrations(endpoint, triggerButton) {
       credentials: "same-origin",
     });
 
-    const payload = await response.json();
+    const payload = await parseJsonResponse(response);
     if (!response.ok) {
       if (response.status === 401) {
         setAdminAuthenticated(false);
@@ -242,12 +309,47 @@ async function clearRegistrations(endpoint, triggerButton) {
 
     weekLabel.textContent = payload.weekLabel;
     setAdminAuthenticated(Boolean(payload.authenticated));
+    updateSignupWindowState(payload.signupWindow);
     renderRows(payload.registrations);
     adminMessage.textContent = payload.message;
   } catch (error) {
     adminMessage.textContent = error.message;
   } finally {
     triggerButton.disabled = false;
+  }
+}
+
+async function setSignupMode(mode) {
+  adminMessage.textContent = "";
+  updateSignupModeButtons();
+
+  try {
+    const response = await fetch("/api/admin/signup-mode", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ mode }),
+    });
+
+    const payload = await parseJsonResponse(response);
+    if (!response.ok) {
+      if (response.status === 401) {
+        setAdminAuthenticated(false);
+      }
+      throw new Error(payload.error || "Setarea placeholder-ului nu a putut fi schimbata.");
+    }
+
+    weekLabel.textContent = payload.weekLabel;
+    setAdminAuthenticated(Boolean(payload.authenticated));
+    updateSignupWindowState(payload.signupWindow);
+    renderRows(payload.registrations);
+    adminMessage.textContent = payload.message;
+  } catch (error) {
+    adminMessage.textContent = error.message;
+  } finally {
+    updateSignupModeButtons();
   }
 }
 
@@ -265,7 +367,7 @@ async function deleteOneRegistration(registrationId, triggerButton) {
       body: JSON.stringify({ id: registrationId }),
     });
 
-    const payload = await response.json();
+    const payload = await parseJsonResponse(response);
     if (!response.ok) {
       if (response.status === 401) {
         setAdminAuthenticated(false);
@@ -275,6 +377,7 @@ async function deleteOneRegistration(registrationId, triggerButton) {
 
     weekLabel.textContent = payload.weekLabel;
     setAdminAuthenticated(Boolean(payload.authenticated));
+    updateSignupWindowState(payload.signupWindow);
     renderRows(payload.registrations);
     adminMessage.textContent = payload.message;
   } catch (error) {
@@ -300,6 +403,9 @@ function toggleTheme() {
 form.addEventListener("submit", submitRegistration);
 adminLoginForm.addEventListener("submit", loginAdmin);
 adminToggle.addEventListener("click", () => setAdminExpanded(!isAdminExpanded));
+forceOpenButton.addEventListener("click", () => setSignupMode("force_open"));
+togglePlaceholderButton.addEventListener("click", () => setSignupMode("force_closed"));
+autoModeButton.addEventListener("click", () => setSignupMode("auto"));
 clearWeekButton.addEventListener("click", () =>
   clearRegistrations("/api/admin/clear-week", clearWeekButton),
 );

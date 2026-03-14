@@ -190,6 +190,28 @@ h1 {
   color: var(--blue);
 }
 
+.window-status-callout {
+  margin-top: 10px;
+  margin-bottom: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(var(--white-rgb), 0.5);
+}
+
+.window-status-callout.is-open {
+  color: var(--green-text);
+  background: var(--green-bg);
+}
+
+.window-status-callout.is-closed {
+  color: var(--yellow-text);
+  background: var(--yellow-bg);
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: minmax(320px, 440px) minmax(0, 1fr);
@@ -213,6 +235,57 @@ h1 {
 .signup-card {
   position: sticky;
   top: 24px;
+}
+
+.form-controls-shell {
+  position: relative;
+}
+
+.form-controls-shell.is-locked {
+  overflow: hidden;
+  border-radius: 20px;
+}
+
+.form-controls-shell.is-locked > :not(.form-locked-overlay) {
+  filter: blur(1.6px);
+  opacity: 0.5;
+  pointer-events: none;
+  user-select: none;
+}
+
+.form-locked-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(var(--white-rgb), 0.62);
+  backdrop-filter: blur(4px);
+}
+
+.form-locked-card {
+  display: grid;
+  gap: 8px;
+  width: min(100%, 320px);
+  padding: 18px 16px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  text-align: center;
+  background: var(--card-solid);
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+
+.form-locked-card strong {
+  font-size: 1rem;
+}
+
+.form-locked-card span {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
 }
 
 .field {
@@ -242,6 +315,7 @@ h1 {
 }
 
 .hint-box {
+  margin-top: 24px;
   margin-bottom: 22px;
   padding: 18px 20px;
   border-radius: 18px;
@@ -774,6 +848,7 @@ tr.waiting .status-badge {
   }
 
   .hint-box {
+    margin-top: 20px;
     margin-bottom: 16px;
     padding: 15px 16px;
     border-radius: 16px;

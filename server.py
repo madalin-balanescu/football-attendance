@@ -14,6 +14,7 @@ from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo
 
 try:
     import psycopg
@@ -31,6 +32,7 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 MAX_NAMES_PER_SUBMISSION = 2
 GREEN_LIMIT = 18
 ADMIN_SESSION_HOURS = 12
+APP_TIMEZONE = ZoneInfo("Europe/Bucharest")
 
 
 def using_postgres() -> bool:
@@ -70,6 +72,14 @@ def ensure_database() -> None:
                 ON registrations (week_key, created_at, id)
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    setting_key TEXT PRIMARY KEY,
+                    setting_value TEXT NOT NULL
+                )
+                """
+            )
         else:
             connection.execute(
                 """
@@ -87,19 +97,160 @@ def ensure_database() -> None:
                 ON registrations (week_key, created_at, id)
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    setting_key TEXT PRIMARY KEY,
+                    setting_value TEXT NOT NULL
+                )
+                """
+            )
+            connection.commit()
+
+    set_setting("signup_mode", "auto", only_if_missing=True)
+
+
+def get_setting(setting_key: str, default: str = "") -> str:
+    with get_connection() as connection:
+        if using_postgres():
+            row = connection.execute(
+                "SELECT setting_value FROM app_settings WHERE setting_key = %s",
+                (setting_key,),
+            ).fetchone()
+        else:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(
+                "SELECT setting_value FROM app_settings WHERE setting_key = ?",
+                (setting_key,),
+            ).fetchone()
+
+    if row is None:
+        return default
+    return row[0] if using_postgres() else row["setting_value"]
+
+
+def set_setting(setting_key: str, setting_value: str, only_if_missing: bool = False) -> None:
+    with get_connection() as connection:
+        if using_postgres():
+            if only_if_missing:
+                connection.execute(
+                    """
+                    INSERT INTO app_settings (setting_key, setting_value)
+                    VALUES (%s, %s)
+                    ON CONFLICT (setting_key) DO NOTHING
+                    """,
+                    (setting_key, setting_value),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO app_settings (setting_key, setting_value)
+                    VALUES (%s, %s)
+                    ON CONFLICT (setting_key)
+                    DO UPDATE SET setting_value = EXCLUDED.setting_value
+                    """,
+                    (setting_key, setting_value),
+                )
+        else:
+            if only_if_missing:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO app_settings (setting_key, setting_value)
+                    VALUES (?, ?)
+                    """,
+                    (setting_key, setting_value),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO app_settings (setting_key, setting_value)
+                    VALUES (?, ?)
+                    ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value
+                    """,
+                    (setting_key, setting_value),
+                )
             connection.commit()
 
 
+def signup_mode() -> str:
+    value = get_setting("signup_mode", "auto").lower()
+    if value not in {"auto", "force_open", "force_closed"}:
+        return "auto"
+    return value
+
+
 def current_week_key(now: datetime | None = None) -> str:
-    moment = now or datetime.now()
+    moment = now or datetime.now(APP_TIMEZONE)
     iso_year, iso_week, _ = moment.isocalendar()
     return f"{iso_year}-W{iso_week:02d}"
 
 
 def week_label_from_key(week_key: str) -> str:
     year_text, week_text = week_key.split("-W")
-    friday = datetime.fromisocalendar(int(year_text), int(week_text), 5)
+    friday = datetime.fromisocalendar(int(year_text), int(week_text), 5).replace(tzinfo=APP_TIMEZONE)
     return friday.strftime("%d %b %Y")
+
+
+def signup_window_for_week(week_key: str) -> tuple[datetime, datetime]:
+    year_text, week_text = week_key.split("-W")
+    start = datetime.fromisocalendar(int(year_text), int(week_text), 4).replace(
+        hour=11,
+        minute=59,
+        second=0,
+        microsecond=0,
+        tzinfo=APP_TIMEZONE,
+    )
+    end = datetime.fromisocalendar(int(year_text), int(week_text), 5).replace(
+        hour=23,
+        minute=59,
+        second=59,
+        microsecond=0,
+        tzinfo=APP_TIMEZONE,
+    )
+    return start, end
+
+
+def signup_window_payload(now: datetime | None = None) -> dict[str, object]:
+    current_time = now or datetime.now(APP_TIMEZONE)
+    week_key = current_week_key(current_time)
+    start, end = signup_window_for_week(week_key)
+    schedule_open = start <= current_time <= end
+    current_mode = signup_mode()
+    if current_mode == "force_open":
+        is_open = True
+    elif current_mode == "force_closed":
+        is_open = False
+    else:
+        is_open = schedule_open
+
+    if current_mode == "force_closed":
+        message = "Inscrierile sunt oprite manual de admin."
+    elif current_mode == "force_open":
+        message = "Inscrierile sunt deschise manual de admin."
+    elif is_open:
+        message = "Inscrierile sunt deschise acum, de joi 11:59 pana vineri la 23:59."
+    elif current_time < start:
+        message = (
+            f"Inscrierile se deschid joi la 11:59. Fereastra pentru aceasta saptamana incepe pe "
+            f"{start.strftime('%d %b %Y %H:%M')}."
+        )
+    else:
+        next_week_time = current_time + timedelta(days=7)
+        next_start, _ = signup_window_for_week(current_week_key(next_week_time))
+        message = (
+            f"Fereastra curenta s-a inchis vineri la 23:59. Urmatoarea deschidere este joi pe "
+            f"{next_start.strftime('%d %b %Y %H:%M')}."
+        )
+
+    return {
+        "isOpen": is_open,
+        "scheduleOpen": schedule_open,
+        "mode": current_mode,
+        "message": message,
+        "start": start.strftime("%Y-%m-%d %H:%M:%S"),
+        "end": end.strftime("%Y-%m-%d %H:%M:%S"),
+        "timezone": "Europe/Bucharest",
+    }
 
 
 def sanitize_names(payload: dict[str, object]) -> list[str]:
@@ -157,7 +308,7 @@ def fetch_registrations(week_key: str) -> list[dict[str, object]]:
 
 
 def insert_registrations(names: list[str], week_key: str) -> None:
-    created_at = datetime.now().replace(microsecond=0)
+    created_at = datetime.now(APP_TIMEZONE).replace(microsecond=0, tzinfo=None)
     with get_connection() as connection:
         if using_postgres():
             connection.executemany(
@@ -274,6 +425,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
                     "weekKey": week_key,
                     "weekLabel": week_label_from_key(week_key),
                     "greenLimit": GREEN_LIMIT,
+                    "signupWindow": signup_window_payload(),
                     "registrations": registrations,
                 }
             )
@@ -300,6 +452,9 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/admin/clear-all":
             self.handle_admin_clear(None)
+            return
+        if parsed.path == "/api/admin/signup-mode":
+            self.handle_admin_signup_mode()
             return
         if parsed.path == "/api/admin/delete-registration":
             self.handle_admin_delete_one()
@@ -329,6 +484,17 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             )
             return
 
+        signup_window = signup_window_payload()
+        if not signup_window["isOpen"]:
+            self.send_json(
+                {
+                    "error": signup_window["message"],
+                    "signupWindow": signup_window,
+                },
+                status=HTTPStatus.FORBIDDEN,
+            )
+            return
+
         week_key = current_week_key()
         insert_registrations(names, week_key)
         registrations = fetch_registrations(week_key)
@@ -338,6 +504,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
                 "weekKey": week_key,
                 "weekLabel": week_label_from_key(week_key),
                 "greenLimit": GREEN_LIMIT,
+                "signupWindow": signup_window,
                 "registrations": registrations,
             },
             status=HTTPStatus.CREATED,
@@ -408,6 +575,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             "deleted": deleted,
             "weekKey": current_week_key(),
             "weekLabel": week_label_from_key(current_week_key()),
+            "signupWindow": signup_window_payload(),
             "registrations": fetch_registrations(current_week_key()),
             "authenticated": True,
             "message": (
@@ -417,6 +585,51 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             ),
         }
         self.send_json(response)
+
+    def handle_admin_signup_mode(self) -> None:
+        if not ADMIN_PASSWORD:
+            self.send_json(
+                {"error": "Panoul de admin nu este configurat."},
+                status=HTTPStatus.SERVICE_UNAVAILABLE,
+            )
+            return
+
+        if not is_admin_authenticated(self.headers.get("Cookie")):
+            self.send_json(
+                {"error": "Autentificare necesara."},
+                status=HTTPStatus.UNAUTHORIZED,
+            )
+            return
+
+        payload = self.read_json_body()
+        if payload is None:
+            return
+
+        mode = str(payload.get("mode", "auto")).lower()
+        if mode not in {"auto", "force_open", "force_closed"}:
+            self.send_json(
+                {"error": "Mod invalid pentru placeholder."},
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            return
+
+        set_setting("signup_mode", mode)
+        active_week = current_week_key()
+        self.send_json(
+            {
+                "authenticated": True,
+                "mode": mode,
+                "weekKey": active_week,
+                "weekLabel": week_label_from_key(active_week),
+                "signupWindow": signup_window_payload(),
+                "registrations": fetch_registrations(active_week),
+                "message": {
+                    "force_closed": "Placeholder-ul a fost activat manual.",
+                    "force_open": "Formularul a fost deschis manual.",
+                    "auto": "Formularul a revenit la programul automat.",
+                }[mode],
+            }
+        )
 
     def handle_admin_delete_one(self) -> None:
         if not ADMIN_PASSWORD:
@@ -460,6 +673,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
                 "deleted": deleted,
                 "weekKey": active_week,
                 "weekLabel": week_label_from_key(active_week),
+                "signupWindow": signup_window_payload(),
                 "registrations": fetch_registrations(active_week),
                 "authenticated": True,
                 "message": "Inscrierea selectata a fost stearsa.",

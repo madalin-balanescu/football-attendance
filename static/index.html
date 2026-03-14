@@ -72,6 +72,15 @@
                     </form>
 
                     <div id="admin-actions" class="admin-actions hidden">
+                      <button id="force-open-button" type="button" class="secondary-button">
+                        Forteaza deschis
+                      </button>
+                      <button id="toggle-placeholder-button" type="button" class="secondary-button">
+                        Forteaza inchis
+                      </button>
+                      <button id="auto-mode-button" type="button" class="ghost-button">
+                        Mod automat
+                      </button>
                       <button id="clear-week-button" type="button" class="secondary-button">
                         Sterge saptamana curenta
                       </button>
@@ -118,42 +127,53 @@
             <p class="schedule-callout">
               Inscrierile incep in fiecare joi la ora 12:00.
             </p>
+            <p id="signup-window-message" class="window-status-callout hidden" aria-live="polite"></p>
           </div>
         </div>
 
         <div class="content-grid">
           <form id="attendance-form" class="signup-card">
-            <label class="field">
-              <span>Nume persoana 1 (exact cum apare in WhatsApp)</span>
-              <input
-                id="person1"
-                name="person1"
-                type="text"
-                maxlength="80"
-                placeholder="Ex: Popescu Ion"
-                required
-              />
-            </label>
+            <div class="form-controls-shell">
+              <div id="form-locked-overlay" class="form-locked-overlay hidden" aria-hidden="true">
+                <div class="form-locked-card">
+                  <strong>Inscrierile sunt momentan inchise</strong>
+                  <span>Formularul devine activ doar in intervalul joi 12:00.</span>
+                </div>
+              </div>
 
-            <label class="field">
-              <span>Nume persoana 2 (optional)</span>
-              <input
-                id="person2"
-                name="person2"
-                type="text"
-                maxlength="80"
-                placeholder="Ex: Alex"
-              />
-            </label>
+              <label class="field">
+                <span>Nume persoana 1 (exact cum apare in WhatsApp)</span>
+                <input
+                  id="person1"
+                  name="person1"
+                  type="text"
+                  maxlength="80"
+                  placeholder="Ex: Popescu Ion"
+                  required
+                />
+              </label>
+
+              <label class="field">
+                <span>Nume persoana 2 (optional)</span>
+                <input
+                  id="person2"
+                  name="person2"
+                  type="text"
+                  maxlength="80"
+                  placeholder="Ex: Alex"
+                />
+              </label>
+
+              <button id="submit-button" type="submit">
+                <span class="button-label">Trimite inscrierea</span>
+              </button>
+            </div>
 
             <div class="hint-box">
               Primele 18 persoane inscrise apar cu verde. Restul raman pe lista de asteptare,
               marcati cu galben.
             </div>
 
-            <button id="submit-button" type="submit">
-              <span class="button-label">Trimite inscrierea</span>
-            </button>
             <p id="form-message" class="form-message" aria-live="polite"></p>
           </form>
 
