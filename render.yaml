@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: football-attendance
+    runtime: python
+    plan: free
+    buildCommand: ""
+    startCommand: python3 server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.3
