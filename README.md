@@ -3,7 +3,7 @@
 Small web app for weekly football attendance:
 
 - signup form with up to 2 names per submission
-- SQLite database persistence
+- PostgreSQL on Render, with SQLite fallback for local development
 - automatic weekly grouping
 - first 18 registrations highlighted in green
 - later registrations highlighted in yellow
@@ -11,6 +11,9 @@ Small web app for weekly football attendance:
 ## Run locally
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 python3 server.py
 ```
 
@@ -19,10 +22,11 @@ Then open [http://localhost:8000](http://localhost:8000).
 ## Project structure
 
 - `server.py` - HTTP server, API, SQLite logic
+- `requirements.txt` - Python dependencies
 - `static/index.html` - page layout
 - `static/styles.css` - styling
 - `static/app.js` - form submit + live table refresh
-- `data/attendance.db` - SQLite database created automatically on first run
+- `data/attendance.db` - SQLite fallback database for local development only
 
 ## Make it available from anywhere
 
@@ -48,14 +52,21 @@ This repo now includes `render.yaml`, so the easiest option is:
 
 Important:
 
-- Render free instances can sleep when unused.
-- The SQLite database is stored on the server filesystem, so on free hosting it may be reset on redeploy or instance replacement.
+- Render free web services can sleep when unused.
+- `render.yaml` now provisions a Render Postgres database and injects `DATABASE_URL` into the web service automatically.
+- Local development still works without Postgres because the app falls back to SQLite if `DATABASE_URL` is not set.
 
-## Better database for production
+## PostgreSQL migration notes
 
-If you want the data to stay safe long term, the next upgrade should be:
+The app now prefers PostgreSQL whenever `DATABASE_URL` exists.
 
-- deploy the app on Render or Railway
-- move the database from SQLite to PostgreSQL
+For your existing Render service:
 
-If you want, I can make that upgrade next so the app is properly production-ready.
+1. Sync the updated `render.yaml` in Render.
+2. Let Render create `football-attendance-db`.
+3. Redeploy the web service.
+
+Important:
+
+- Existing data stored in the old SQLite file on Render will not be copied automatically into PostgreSQL.
+- New signups after redeploy will go into Postgres.

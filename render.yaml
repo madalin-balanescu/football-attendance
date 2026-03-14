@@ -1,10 +1,20 @@
+databases:
+  - name: football-attendance-db
+    plan: free
+    databaseName: football_attendance
+    user: football_attendance_user
+
 services:
   - type: web
     name: football-attendance
     runtime: python
     plan: free
-    buildCommand: ""
+    buildCommand: pip install -r requirements.txt
     startCommand: python3 server.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.3
+      - key: DATABASE_URL
+        fromDatabase:
+          name: football-attendance-db
+          property: connectionString
