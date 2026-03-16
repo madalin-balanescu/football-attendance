@@ -80,6 +80,23 @@ body {
     linear-gradient(180deg, #f6f9ff 0%, var(--bg) 100%);
 }
 
+body.app-booting #match-date-display,
+body.app-booting #week-label,
+body.app-booting #signup-state-title,
+body.app-booting #signup-state-badge,
+body.app-booting #confirmed-counter,
+body.app-booting #spots-left-counter,
+body.app-booting #waiting-counter,
+body.app-booting #progress-caption,
+body.app-booting #progress-fill,
+body.app-booting #attendance-table-body {
+  opacity: 0;
+}
+
+body.app-booting .form-controls-shell {
+  visibility: hidden;
+}
+
 :root[data-theme="dark"] body {
   background:
     radial-gradient(circle at top left, var(--bg-overlay-top), transparent 32%),
@@ -169,8 +186,8 @@ body {
 .match-date-card {
   position: relative;
   display: grid;
-  gap: 8px;
-  padding: 20px;
+  gap: 6px;
+  padding: 16px 18px;
   border: 1px solid rgba(47, 102, 232, 0.1);
   border-radius: 24px;
   background:
@@ -192,13 +209,13 @@ body {
 .match-date-label,
 .match-date-subtitle {
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: 0.8rem;
   font-weight: 700;
 }
 
 .match-date-card strong {
-  font-size: clamp(1.6rem, 2vw, 2.2rem);
-  line-height: 1.05;
+  font-size: clamp(1.35rem, 1.75vw, 1.85rem);
+  line-height: 1.02;
 }
 
 .top-controls {

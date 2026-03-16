@@ -48,6 +48,10 @@ let currentSignupMode = "auto";
 let isScheduleOpen = true;
 let lastSeenRegistrationId = null;
 
+function setAppReady(isReady) {
+  document.body.classList.toggle("app-booting", !isReady);
+}
+
 function formatRegistrationTime(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(value);
   if (!match) {
@@ -62,7 +66,7 @@ function applyTheme(theme) {
   currentTheme = theme;
   document.documentElement.dataset.theme = theme;
   localStorage.setItem("theme", theme);
-  themeToggleLabel.textContent = theme === "dark" ? "Light mode" : "Dark mode";
+  themeToggleLabel.textContent = theme === "dark" ? "Mod luminos" : "Mod intunecat";
   themeIconSun.classList.toggle("hidden", theme !== "dark");
   themeIconMoon.classList.toggle("hidden", theme === "dark");
 }
@@ -107,19 +111,19 @@ function updateLiveBoard(registrations = []) {
   progressCaption.textContent = `${confirmed} din 18 locuri confirmate`;
   progressFill.style.width = `${progressPercent}%`;
 
-  let title = "Closed";
+  let title = "Inchis";
   let badge = "Inchis";
 
   if (currentSignupMode === "force_open" || isSignupWindowOpen) {
     if (spotsLeft <= 3 && confirmed > 0) {
-      title = "Almost full";
+      title = "Aproape plin";
       badge = "Aproape plin";
     } else {
-      title = "Open now";
+      title = "Deschis acum";
       badge = "Deschis";
     }
   } else if (waiting > 0) {
-    title = "Waiting list";
+    title = "Lista de asteptare";
     badge = "Asteptare";
   }
 
@@ -235,7 +239,7 @@ async function loadRegistrations() {
     throw new Error("Nu am putut incarca lista curenta.");
   }
 
-  const payload = await response.json();
+  const payload = await parseJsonResponse(response);
   weekLabel.textContent = payload.weekLabel;
   matchDateDisplay.textContent = payload.weekLabel;
   updateSignupWindowState(payload.signupWindow);
@@ -310,7 +314,7 @@ async function submitRegistration(event) {
     updateSignupWindowState(payload.signupWindow);
     renderRows(payload.registrations);
     formMessage.textContent = payload.message;
-    flashSuccessPanel("Inscrierea este live in tabel si a fost marcata in ordinea sosirii.");
+    flashSuccessPanel("Inscrierea este deja in tabel si a fost marcata in ordinea sosirii.");
   } catch (error) {
     formMessage.textContent = error.message;
   } finally {
@@ -483,9 +487,12 @@ themeToggle.addEventListener("click", toggleTheme);
 
 applyTheme(currentTheme);
 setAdminExpanded(false);
+setAppReady(false);
 
-loadAdminStatus().then(() => {
-  loadRegistrations().catch((error) => {
-    formMessage.textContent = error.message;
-  });
+Promise.allSettled([loadAdminStatus(), loadRegistrations()]).then((results) => {
+  const registrationResult = results[1];
+  if (registrationResult.status === "rejected") {
+    formMessage.textContent = registrationResult.reason.message;
+  }
+  setAppReady(true);
 });
