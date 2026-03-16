@@ -1,0 +1,89 @@
+<svg width="1280" height="820" viewBox="0 0 1280 820" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="160" y1="40" x2="1140" y2="780" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7FAFF"/>
+      <stop offset="1" stop-color="#DCEAFF"/>
+    </linearGradient>
+    <linearGradient id="card" x1="190" y1="78" x2="1085" y2="730" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.94"/>
+      <stop offset="1" stop-color="#EEF5FF" stop-opacity="0.98"/>
+    </linearGradient>
+    <linearGradient id="primary" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#2F66E8"/>
+      <stop offset="1" stop-color="#4A87F8"/>
+    </linearGradient>
+    <linearGradient id="live" x1="205" y1="265" x2="1070" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D9E8FF"/>
+      <stop offset="1" stop-color="#DFF7ED"/>
+    </linearGradient>
+    <filter id="shadow" x="95" y="28" width="1090" height="764" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="24"/>
+      <feGaussianBlur stdDeviation="28"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.140625 0 0 0 0 0.277344 0 0 0 0 0.5625 0 0 0 0.14 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_2"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_2" result="shape"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="820" fill="url(#bg)"/>
+  <circle cx="1088" cy="126" r="180" fill="#DCE7FF" fill-opacity="0.7"/>
+  <circle cx="158" cy="698" r="210" fill="#D8F4E6" fill-opacity="0.9"/>
+
+  <g filter="url(#shadow)">
+    <rect x="151" y="60" width="978" height="652" rx="36" fill="url(#card)"/>
+    <rect x="169" y="78" width="942" height="616" rx="28" stroke="#D6E4FF"/>
+  </g>
+
+  <rect x="206" y="118" width="220" height="24" rx="12" fill="#E4EEFF"/>
+  <text x="206" y="144" fill="#2F66E8" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="18" font-weight="800" letter-spacing="3">INSCRIERE SAPTAMANALA</text>
+
+  <text x="206" y="210" fill="#1F2B45" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="62" font-weight="800">Prezenta saptamanala la fotbal</text>
+  <text x="206" y="268" fill="#5A6475" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="24" font-weight="500">Completeaza formularul pentru a te inscrie la meciul de vineri.</text>
+  <text x="206" y="305" fill="#2F66E8" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="24" font-weight="800">Inscrierile incep in fiecare joi la ora 12:00.</text>
+
+  <rect x="885" y="168" width="176" height="124" rx="24" fill="#F8FBFF" stroke="#D6E4FF"/>
+  <text x="914" y="208" fill="#637189" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="18" font-weight="700">Data de joc</text>
+  <text x="914" y="248" fill="#1F2B45" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="28" font-weight="800">20 Mar 2026</text>
+  <text x="914" y="282" fill="#637189" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="18" font-weight="700">Fotbal de vineri seara</text>
+
+  <rect x="206" y="340" width="855" height="142" rx="28" fill="url(#live)" stroke="#D6E4FF"/>
+  <text x="232" y="382" fill="#637189" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="18" font-weight="800" letter-spacing="2">STARE INSCRIERI</text>
+  <text x="232" y="428" fill="#1F2B45" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="36" font-weight="800">Deschis acum</text>
+  <rect x="907" y="371" width="118" height="50" rx="25" fill="#DCE8FF"/>
+  <text x="938" y="403" fill="#2C56B5" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="20" font-weight="800">Deschis</text>
+
+  <rect x="232" y="448" width="248" height="64" rx="22" fill="#FFFFFF" fill-opacity="0.84"/>
+  <rect x="509" y="448" width="248" height="64" rx="22" fill="#FFFFFF" fill-opacity="0.84"/>
+  <rect x="786" y="448" width="248" height="64" rx="22" fill="#FFFFFF" fill-opacity="0.84"/>
+  <text x="258" y="477" fill="#637189" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="16" font-weight="800" letter-spacing="2">CONFIRMATI</text>
+  <text x="258" y="504" fill="#1F2B45" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="26" font-weight="800">12 / 18</text>
+  <text x="535" y="477" fill="#637189" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="16" font-weight="800" letter-spacing="2">LOCURI RAMASE</text>
+  <text x="535" y="504" fill="#1F2B45" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="26" font-weight="800">6</text>
+  <text x="812" y="477" fill="#637189" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="16" font-weight="800" letter-spacing="2">LISTA ASTEPTARE</text>
+  <text x="812" y="504" fill="#1F2B45" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="26" font-weight="800">2</text>
+
+  <rect x="206" y="540" width="316" height="186" rx="28" fill="#FFFFFF" fill-opacity="0.78" stroke="#D6E4FF"/>
+  <text x="238" y="590" fill="#2F66E8" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="16" font-weight="800">REZERVA-TI LOCUL</text>
+  <text x="238" y="632" fill="#1F2B45" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="28" font-weight="800">Trimite prezenta</text>
+  <rect x="238" y="662" width="252" height="56" rx="18" fill="#F5F9FF" stroke="#D6E4FF"/>
+  <text x="262" y="697" fill="#8B96A9" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="20" font-weight="700">Ex: Popescu Ion</text>
+
+  <rect x="554" y="540" width="507" height="186" rx="28" fill="#FFFFFF" fill-opacity="0.78" stroke="#D6E4FF"/>
+  <text x="586" y="584" fill="#2F66E8" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="16" font-weight="800">LISTA CURENTA</text>
+  <text x="586" y="624" fill="#1F2B45" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="36" font-weight="800">Prezenta pentru 20 Mar 2026</text>
+
+  <rect x="586" y="650" width="443" height="40" rx="16" fill="#EFF6FF"/>
+  <text x="610" y="676" fill="#637189" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="16" font-weight="800">#</text>
+  <text x="670" y="676" fill="#637189" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="16" font-weight="800">ORA</text>
+  <text x="790" y="676" fill="#637189" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="16" font-weight="800">NUME</text>
+  <text x="938" y="676" fill="#637189" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="16" font-weight="800">STATUS</text>
+
+  <rect x="586" y="690" width="443" height="36" rx="14" fill="#DFF1D6"/>
+  <text x="610" y="714" fill="#1F2B45" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="16" font-weight="700">1</text>
+  <text x="670" y="714" fill="#1F2B45" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="16" font-weight="700">20.03 12:00:03</text>
+  <text x="790" y="714" fill="#1F2B45" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="16" font-weight="700">Emanuel</text>
+  <rect x="920" y="697" width="90" height="22" rx="11" fill="#EEF9E7"/>
+  <text x="940" y="713" fill="#2D6A2E" font-family="Plus Jakarta Sans, Arial, sans-serif" font-size="14" font-weight="800">Confirmat</text>
+</svg>

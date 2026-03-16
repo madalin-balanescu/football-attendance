@@ -1,115 +1,185 @@
-# Football Attendance App
+# Football Attendance
 
-Small web app for weekly football attendance:
+Weekly football attendance app with a public signup page, admin controls, and a dedicated team-builder view for creating 3 balanced teams from the first 18 confirmed players.
 
-- signup form with up to 2 names per submission
-- PostgreSQL on Render, with SQLite fallback for local development
-- automatic weekly grouping
-- first 18 registrations highlighted in green
-- later registrations highlighted in yellow
+## Preview
 
-## Run locally
+![Football Attendance Preview](docs/attendance-preview.svg)
+
+## What It Does
+
+- public weekly signup form with up to 2 names per submission
+- automatic Friday-based week label
+- first 18 players marked as confirmed
+- extra players placed on the waiting list
+- admin login protected by `ADMIN_PASSWORD`
+- admin tools to:
+  - force the form open, closed, or automatic
+  - delete one registration
+  - clear the current week
+  - clear all historical registrations
+- dedicated `/echipe` page for:
+  - assigning each confirmed player a preferred role
+  - generating 3 balanced teams
+  - resetting generated teams
+
+## Main Routes
+
+- `/` - public attendance page
+- `/echipe` - team builder page
+- `/teams` - alias for the team builder page
+
+## Tech Stack
+
+- Python standard-library HTTP server
+- PostgreSQL in production through `DATABASE_URL`
+- SQLite fallback for local development
+- plain HTML, CSS, and JavaScript on the frontend
+
+## Local Development
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+export ADMIN_PASSWORD="test123"
 python3 server.py
 ```
 
-Then open [http://localhost:8000](http://localhost:8000).
+Then open:
 
-## Project structure
+- [http://localhost:8000](http://localhost:8000)
+- [http://localhost:8000/echipe](http://localhost:8000/echipe)
 
-- `server.py` - HTTP server, API, SQLite logic
-- `requirements.txt` - Python dependencies
-- `static/index.html` - page layout
-- `static/styles.css` - styling
-- `static/app.js` - form submit + live table refresh
-- `data/attendance.db` - SQLite fallback database for local development only
+## Environment Variables
 
-## Make it available from anywhere
+- `ADMIN_PASSWORD`
+  Enables admin access and signs the admin session cookie.
 
-You can deploy this app on a small VPS or on a platform that supports Python web apps.
+- `DATABASE_URL`
+  If set, the app uses PostgreSQL.
 
-Simple options:
+- `HOST`
+  Defaults to `0.0.0.0`.
 
-- Render
-- Railway
-- Fly.io
-- a VPS with `python3 server.py` behind Nginx
+- `PORT`
+  Defaults to `8000`.
 
-## Publish on Render
+## Admin Features
 
-This repo now includes `render.yaml`, so the easiest option is:
+After setting `ADMIN_PASSWORD`, the admin panel becomes available in the UI.
 
-1. Create a GitHub repository and upload this project.
-2. Go to [Render](https://render.com) and sign in.
-3. Click `New +` -> `Blueprint`.
-4. Connect your GitHub repo.
-5. Render will detect `render.yaml` and create the web service.
-6. After deploy finishes, you will get a public URL like `https://football-attendance.onrender.com`.
+Attendance page admin actions:
 
-Important:
-
-- Render free web services can sleep when unused.
-- `render.yaml` now provisions a Render Postgres database and injects `DATABASE_URL` into the web service automatically.
-- Local development still works without Postgres because the app falls back to SQLite if `DATABASE_URL` is not set.
-
-## PostgreSQL migration notes
-
-The app now prefers PostgreSQL whenever `DATABASE_URL` exists.
-
-For your existing Render service:
-
-1. Sync the updated `render.yaml` in Render.
-2. Let Render create `football-attendance-db`.
-3. Redeploy the web service.
-
-Important:
-
-- Existing data stored in the old SQLite file on Render will not be copied automatically into PostgreSQL.
-- New signups after redeploy will go into Postgres.
-
-## Admin panel
-
-You can enable an admin panel inside the page by setting `ADMIN_PASSWORD`.
-
-Locally:
-
-```bash
-export ADMIN_PASSWORD="choose-a-strong-password"
-python3 server.py
-```
-
-On Render:
-
-1. Open your web service.
-2. Go to `Environment`.
-3. Add `ADMIN_PASSWORD`.
-4. Redeploy the service.
-
-After that, the page will show an admin area where you can:
-
-- log in as admin
+- force signup open
+- force signup closed
+- switch back to automatic window handling
+- delete one row
 - clear the current week
-- clear all registrations
-- delete a single registration directly from the table
+- clear all weeks
 
-## Clear the attendance table
+Team-builder page admin actions:
 
-You can clear registrations with a command instead of touching the database manually:
+- log in using the same admin session
+- assign a role for each confirmed player:
+  - `Atac`
+  - `Mijloc`
+  - `Aparare`
+  - `Oriunde`
+- generate 3 balanced teams
+- reset generated teams
+
+## Signup Rules
+
+In automatic mode:
+
+- signup opens every Thursday at `11:59`
+- signup closes every Friday at `23:59`
+- outside that window the form is locked
+
+Admin can override this with:
+
+- `force_open`
+- `force_closed`
+- `auto`
+
+## Data Model
+
+Registrations store:
+
+- submitted name
+- creation timestamp
+- ISO week key
+- preferred role
+- generated team assignment
+
+App settings store:
+
+- current signup mode
+
+## Deployment
+
+This repo includes [render.yaml](render.yaml), so the simplest deployment path is Render.
+
+High-level flow:
+
+1. Push the repo to GitHub.
+2. Create a new Render Blueprint service.
+3. Select this repository.
+4. Let Render provision the app and PostgreSQL database.
+5. Add `ADMIN_PASSWORD` in the Render environment.
+
+## Tests
+
+Backend coverage includes:
+
+- signup window logic
+- registration validation
+- registration ordering
+- admin authentication
+- delete / clear actions
+- role assignment
+- team generation
+- team reset
+
+Frontend coverage includes:
+
+- initial dashboard rendering
+- signup form behavior
+- locked state behavior
+- team-builder rendering
+- team generation refresh behavior
+
+Run everything:
 
 ```bash
-python3 server.py clear-week
+python3 -Wd -m unittest discover -s tests -v
+node --test tests/test_frontend.js
 ```
 
-That deletes only the current week's registrations.
-
-To delete everything from all weeks:
+Additional quick checks:
 
 ```bash
-python3 server.py clear-all
+python3 -m py_compile server.py
+node --check static/app.js
+node --check static/teams.js
 ```
 
-On Render, you can run the same command from the service shell.
+## Project Structure
+
+- [server.py](server.py) - API, storage, admin logic, routing
+- [static/index.html](static/index.html) - main attendance page
+- [static/app.js](static/app.js) - main page behavior
+- [static/teams.html](static/teams.html) - dedicated team-builder page
+- [static/teams.js](static/teams.js) - team-builder interactions
+- [static/styles.css](static/styles.css) - shared styling
+- [tests/test_server.py](tests/test_server.py) - backend integration tests
+- [tests/test_frontend.js](tests/test_frontend.js) - frontend script tests
+- [tests/frontend_harness.js](tests/frontend_harness.js) - fake DOM test harness
+- [render.yaml](render.yaml) - Render deployment config
+
+## Notes
+
+- local development uses SQLite unless `DATABASE_URL` is provided
+- production should use PostgreSQL
+- free hosting can still have sleeping services or temporary limitations depending on the platform
