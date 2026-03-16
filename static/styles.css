@@ -767,6 +767,10 @@ button {
   box-shadow: none;
 }
 
+.inline-link-button {
+  text-decoration: none;
+}
+
 .secondary-button {
   background: var(--surface-tint);
   color: var(--surface-tint-text);
@@ -806,6 +810,10 @@ button:disabled {
   margin-bottom: 18px;
 }
 
+.team-page-grid {
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+}
+
 .table-header h2 {
   margin-bottom: 0;
   font-size: clamp(1.22rem, 1.6vw, 1.68rem);
@@ -841,6 +849,32 @@ button:disabled {
 .legend-pill.waiting {
   background: var(--yellow-bg);
   color: var(--yellow-text);
+}
+
+.team-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(var(--white-rgb), 0.52);
+}
+
+.team-tools-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.team-tools-copy strong {
+  font-size: 0.96rem;
+}
+
+.team-tools-copy span {
+  color: var(--muted);
+  font-size: 0.88rem;
 }
 
 .table-wrap {
@@ -954,11 +988,166 @@ tr.waiting .status-badge {
   background: rgba(88, 68, 9, 0.36);
 }
 
+.role-select {
+  width: 100%;
+  min-width: 112px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font: inherit;
+  color: var(--text);
+  background: rgba(var(--white-rgb), 0.86);
+}
+
+:root[data-theme="dark"] .role-select {
+  background: rgba(14, 25, 44, 0.92);
+}
+
+.team-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.team-1 {
+  background: rgba(47, 102, 232, 0.14);
+  color: #2150bd;
+}
+
+.team-2 {
+  background: rgba(46, 208, 133, 0.16);
+  color: #1f7b50;
+}
+
+.team-3 {
+  background: rgba(232, 153, 47, 0.18);
+  color: #9a5b03;
+}
+
+:root[data-theme="dark"] .team-1 {
+  background: rgba(94, 143, 255, 0.18);
+  color: #d6e4ff;
+}
+
+:root[data-theme="dark"] .team-2 {
+  background: rgba(46, 208, 133, 0.18);
+  color: #bbf4d8;
+}
+
+:root[data-theme="dark"] .team-3 {
+  background: rgba(232, 153, 47, 0.2);
+  color: #ffd594;
+}
+
 .empty-row td {
   padding: 28px 16px;
   text-align: center;
   color: var(--muted);
   background: var(--card-solid);
+}
+
+.teams-board {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgba(var(--white-rgb), 0.48);
+}
+
+.teams-board-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.teams-board-header h3 {
+  margin: 6px 0 0;
+  font-size: 1.08rem;
+}
+
+.teams-board-note {
+  max-width: 260px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-align: right;
+}
+
+.teams-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.team-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--card-solid);
+}
+
+.team-card-header {
+  display: grid;
+  gap: 10px;
+}
+
+.team-card-header strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.team-card-header span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.team-balance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.team-balance span {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.team-player-list {
+  display: grid;
+  gap: 10px;
+}
+
+.team-player {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 13px;
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.team-player strong {
+  font-size: 0.92rem;
+}
+
+.team-player span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: right;
 }
 
 .admin-panel {
@@ -1026,6 +1215,18 @@ tr.waiting .status-badge {
   border-color: rgba(122, 167, 255, 0.14);
 }
 
+:root[data-theme="dark"] .team-tools,
+:root[data-theme="dark"] .teams-board,
+:root[data-theme="dark"] .team-card {
+  background: rgba(14, 25, 44, 0.92);
+  border-color: rgba(122, 167, 255, 0.14);
+}
+
+:root[data-theme="dark"] .team-balance span,
+:root[data-theme="dark"] .team-player {
+  background: rgba(18, 31, 54, 0.94);
+}
+
 .admin-panel h3 {
   margin-bottom: 8px;
 }
@@ -1078,6 +1279,10 @@ tr.waiting .status-badge {
     grid-template-columns: 1fr;
   }
 
+  .team-page-grid {
+    grid-template-columns: 1fr;
+  }
+
   .hero-topbar {
     gap: 18px;
   }
@@ -1115,6 +1320,10 @@ tr.waiting .status-badge {
 
   .table-header h2 {
     white-space: normal;
+  }
+
+  .teams-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1383,6 +1592,52 @@ tr.waiting .status-badge {
     font-size: 0.68rem;
   }
 
+  .role-select {
+    min-width: 0;
+    padding: 7px 8px;
+    font-size: 0.72rem;
+  }
+
+  .team-badge {
+    padding: 6px 8px;
+    font-size: 0.68rem;
+  }
+
+  .team-tools {
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  .team-tools-copy strong {
+    font-size: 0.9rem;
+  }
+
+  .team-tools-copy span {
+    font-size: 0.78rem;
+  }
+
+  .teams-board {
+    margin-top: 14px;
+    padding: 14px 12px;
+  }
+
+  .teams-board-header {
+    align-items: start;
+    flex-direction: column;
+    margin-bottom: 12px;
+  }
+
+  .teams-board-note {
+    max-width: none;
+    text-align: left;
+    font-size: 0.76rem;
+  }
+
+  .team-card {
+    padding: 13px;
+    border-radius: 16px;
+  }
+
   .admin-popover {
     left: auto;
     right: 0;
@@ -1529,6 +1784,15 @@ tr.waiting .status-badge {
   .status-badge {
     padding: 5px 7px;
     font-size: 0.64rem;
+  }
+
+  .role-select {
+    padding: 6px 7px;
+    font-size: 0.68rem;
+  }
+
+  .team-badge {
+    font-size: 0.62rem;
   }
 
   .table-delete-button {

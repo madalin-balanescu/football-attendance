@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import hmac
 import os
+import random
 import sqlite3
 import sys
 from base64 import urlsafe_b64decode, urlsafe_b64encode
+from collections import defaultdict
 from http.cookies import SimpleCookie
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -33,6 +35,15 @@ MAX_NAMES_PER_SUBMISSION = 2
 GREEN_LIMIT = 18
 ADMIN_SESSION_HOURS = 12
 APP_TIMEZONE = ZoneInfo("Europe/Bucharest")
+TEAM_COUNT = 3
+TEAM_SIZE = 6
+ROLE_OPTIONS = {"forward", "middle", "back", "any"}
+ROLE_LABELS = {
+    "forward": "Atac",
+    "middle": "Mijloc",
+    "back": "Aparare",
+    "any": "Oriunde",
+}
 
 
 def using_postgres() -> bool:
@@ -44,13 +55,19 @@ def get_connection():
     if using_postgres():
         if psycopg is None:
             raise RuntimeError("DATABASE_URL is set but psycopg is not installed.")
-        with psycopg.connect(DATABASE_URL) as connection:
+        connection = psycopg.connect(DATABASE_URL)
+        try:
             yield connection
+        finally:
+            connection.close()
         return
 
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(DB_PATH) as connection:
+    connection = sqlite3.connect(DB_PATH)
+    try:
         yield connection
+    finally:
+        connection.close()
 
 
 def ensure_database() -> None:
@@ -80,6 +97,7 @@ def ensure_database() -> None:
                 )
                 """
             )
+            ensure_registration_columns(connection)
         else:
             connection.execute(
                 """
@@ -105,9 +123,46 @@ def ensure_database() -> None:
                 )
                 """
             )
+            ensure_registration_columns(connection)
             connection.commit()
 
     set_setting("signup_mode", "auto", only_if_missing=True)
+
+
+def ensure_registration_columns(connection) -> None:
+    if using_postgres():
+        connection.execute(
+            """
+            ALTER TABLE registrations
+            ADD COLUMN IF NOT EXISTS preferred_role TEXT NOT NULL DEFAULT 'any'
+            """
+        )
+        connection.execute(
+            """
+            ALTER TABLE registrations
+            ADD COLUMN IF NOT EXISTS assigned_team INTEGER
+            """
+        )
+        return
+
+    existing_columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(registrations)").fetchall()
+    }
+    if "preferred_role" not in existing_columns:
+        connection.execute(
+            """
+            ALTER TABLE registrations
+            ADD COLUMN preferred_role TEXT NOT NULL DEFAULT 'any'
+            """
+        )
+    if "assigned_team" not in existing_columns:
+        connection.execute(
+            """
+            ALTER TABLE registrations
+            ADD COLUMN assigned_team INTEGER
+            """
+        )
 
 
 def get_setting(setting_key: str, default: str = "") -> str:
@@ -177,6 +232,13 @@ def signup_mode() -> str:
     if value not in {"auto", "force_open", "force_closed"}:
         return "auto"
     return value
+
+
+def normalize_role(value: str | None) -> str:
+    role = str(value or "any").strip().lower()
+    if role not in ROLE_OPTIONS:
+        return "any"
+    return role
 
 
 def current_week_key(now: datetime | None = None) -> str:
@@ -268,7 +330,7 @@ def fetch_registrations(week_key: str) -> list[dict[str, object]]:
         if using_postgres():
             rows = connection.execute(
                 """
-                SELECT id, submitted_name, created_at
+                SELECT id, submitted_name, created_at, preferred_role, assigned_team
                 FROM registrations
                 WHERE week_key = %s
                 ORDER BY created_at ASC, id ASC
@@ -279,7 +341,7 @@ def fetch_registrations(week_key: str) -> list[dict[str, object]]:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
                 """
-                SELECT id, submitted_name, created_at
+                SELECT id, submitted_name, created_at, preferred_role, assigned_team
                 FROM registrations
                 WHERE week_key = ?
                 ORDER BY datetime(created_at) ASC, id ASC
@@ -302,6 +364,11 @@ def fetch_registrations(week_key: str) -> list[dict[str, object]]:
                 "name": row[1] if using_postgres() else row["submitted_name"],
                 "createdAt": created_at_text,
                 "status": "confirmed" if index <= GREEN_LIMIT else "waiting",
+                "role": normalize_role(row[3] if using_postgres() else row["preferred_role"]),
+                "roleLabel": ROLE_LABELS[
+                    normalize_role(row[3] if using_postgres() else row["preferred_role"])
+                ],
+                "team": row[4] if using_postgres() else row["assigned_team"],
             }
         )
     return registrations
@@ -327,6 +394,175 @@ def insert_registrations(names: list[str], week_key: str) -> None:
                 [(name, created_at.strftime("%Y-%m-%d %H:%M:%S"), week_key) for name in names],
             )
             connection.commit()
+
+
+def update_registration_role(registration_id: int, role: str) -> int:
+    normalized_role = normalize_role(role)
+    with get_connection() as connection:
+        if using_postgres():
+            updated = connection.execute(
+                """
+                UPDATE registrations
+                SET preferred_role = %s
+                WHERE id = %s
+                """,
+                (normalized_role, registration_id),
+            ).rowcount
+        else:
+            updated = connection.execute(
+                """
+                UPDATE registrations
+                SET preferred_role = ?
+                WHERE id = ?
+                """,
+                (normalized_role, registration_id),
+            ).rowcount
+            connection.commit()
+    return updated
+
+
+def reset_team_assignments(week_key: str) -> int:
+    with get_connection() as connection:
+        if using_postgres():
+            updated = connection.execute(
+                """
+                UPDATE registrations
+                SET assigned_team = NULL
+                WHERE week_key = %s
+                """,
+                (week_key,),
+            ).rowcount
+        else:
+            updated = connection.execute(
+                """
+                UPDATE registrations
+                SET assigned_team = NULL
+                WHERE week_key = ?
+                """,
+                (week_key,),
+            ).rowcount
+            connection.commit()
+    return updated
+
+
+def generate_balanced_teams(week_key: str) -> list[dict[str, object]]:
+    registrations = fetch_registrations(week_key)
+    confirmed_players = [row for row in registrations if row["status"] == "confirmed"][:GREEN_LIMIT]
+
+    if not confirmed_players:
+        reset_team_assignments(week_key)
+        return []
+
+    buckets: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for player in confirmed_players:
+        buckets[normalize_role(player.get("role"))].append(player)
+
+    teams = [
+        {
+            "id": index,
+            "players": [],
+            "size": 0,
+            "roles": {"forward": 0, "middle": 0, "back": 0},
+        }
+        for index in range(1, TEAM_COUNT + 1)
+    ]
+    rng = random.SystemRandom()
+
+    def choose_team_for_role(role: str | None) -> dict[str, object]:
+        team_pool = teams[:]
+        rng.shuffle(team_pool)
+        if role in {"forward", "middle", "back"}:
+            return min(
+                team_pool,
+                key=lambda team: (
+                    team["roles"][role],
+                    team["size"],
+                ),
+            )
+        return min(team_pool, key=lambda team: team["size"])
+
+    assignments: list[tuple[int, int]] = []
+    for role in ("forward", "middle", "back", "any"):
+        role_players = buckets.get(role, [])
+        rng.shuffle(role_players)
+        for player in role_players:
+            team = choose_team_for_role(role)
+            team["players"].append(player)
+            team["size"] += 1
+            if role in team["roles"]:
+                team["roles"][role] += 1
+            assignments.append((team["id"], int(player["id"])))
+
+    with get_connection() as connection:
+        if using_postgres():
+            connection.execute(
+                """
+                UPDATE registrations
+                SET assigned_team = NULL
+                WHERE week_key = %s
+                """,
+                (week_key,),
+            )
+            if assignments:
+                connection.executemany(
+                    """
+                    UPDATE registrations
+                    SET assigned_team = %s
+                    WHERE id = %s
+                    """,
+                    assignments,
+                )
+        else:
+            connection.execute(
+                """
+                UPDATE registrations
+                SET assigned_team = NULL
+                WHERE week_key = ?
+                """,
+                (week_key,),
+            )
+            if assignments:
+                connection.executemany(
+                    """
+                    UPDATE registrations
+                    SET assigned_team = ?
+                    WHERE id = ?
+                    """,
+                    assignments,
+                )
+            connection.commit()
+
+    return build_team_payload(fetch_registrations(week_key))
+
+
+def build_team_payload(registrations: list[dict[str, object]]) -> list[dict[str, object]]:
+    grouped = {
+        index: {
+            "id": index,
+            "label": f"Echipa {index}",
+            "players": [],
+            "counts": {"forward": 0, "middle": 0, "back": 0, "any": 0},
+        }
+        for index in range(1, TEAM_COUNT + 1)
+    }
+
+    for registration in registrations:
+        team_id = registration.get("team")
+        if registration.get("status") != "confirmed" or team_id not in grouped:
+            continue
+        role = normalize_role(registration.get("role"))
+        grouped[team_id]["players"].append(
+            {
+                "id": registration["id"],
+                "name": registration["name"],
+                "role": role,
+                "roleLabel": ROLE_LABELS[role],
+                "position": registration["position"],
+            }
+        )
+        grouped[team_id]["counts"][role] += 1
+
+    return [grouped[index] for index in range(1, TEAM_COUNT + 1) if grouped[index]["players"]]
 
 
 def delete_registrations(week_key: str | None = None) -> int:
@@ -427,6 +663,10 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
                     "greenLimit": GREEN_LIMIT,
                     "signupWindow": signup_window_payload(),
                     "registrations": registrations,
+                    "teams": build_team_payload(registrations),
+                    "roleOptions": [
+                        {"value": value, "label": label} for value, label in ROLE_LABELS.items()
+                    ],
                 }
             )
             return
@@ -438,6 +678,9 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path in {"/echipe", "/teams"}:
+            self.path = "/teams.html"
+            return super().do_GET()
         if parsed.path == "/":
             self.path = "/index.html"
         return super().do_GET()
@@ -455,6 +698,15 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/admin/signup-mode":
             self.handle_admin_signup_mode()
+            return
+        if parsed.path == "/api/admin/update-role":
+            self.handle_admin_update_role()
+            return
+        if parsed.path == "/api/admin/generate-teams":
+            self.handle_admin_generate_teams()
+            return
+        if parsed.path == "/api/admin/reset-teams":
+            self.handle_admin_reset_teams()
             return
         if parsed.path == "/api/admin/delete-registration":
             self.handle_admin_delete_one()
@@ -506,6 +758,10 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
                 "greenLimit": GREEN_LIMIT,
                 "signupWindow": signup_window,
                 "registrations": registrations,
+                "teams": build_team_payload(registrations),
+                "roleOptions": [
+                    {"value": value, "label": label} for value, label in ROLE_LABELS.items()
+                ],
             },
             status=HTTPStatus.CREATED,
         )
@@ -571,12 +827,14 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             return
 
         deleted = delete_registrations(week_key)
+        registrations = fetch_registrations(current_week_key())
         response = {
             "deleted": deleted,
             "weekKey": current_week_key(),
             "weekLabel": week_label_from_key(current_week_key()),
             "signupWindow": signup_window_payload(),
-            "registrations": fetch_registrations(current_week_key()),
+            "registrations": registrations,
+            "teams": build_team_payload(registrations),
             "authenticated": True,
             "message": (
                 f"Au fost sterse {deleted} inscrieri din saptamana curenta."
@@ -615,6 +873,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
 
         set_setting("signup_mode", mode)
         active_week = current_week_key()
+        registrations = fetch_registrations(active_week)
         self.send_json(
             {
                 "authenticated": True,
@@ -622,7 +881,8 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
                 "weekKey": active_week,
                 "weekLabel": week_label_from_key(active_week),
                 "signupWindow": signup_window_payload(),
-                "registrations": fetch_registrations(active_week),
+                "registrations": registrations,
+                "teams": build_team_payload(registrations),
                 "message": {
                     "force_closed": "Placeholder-ul a fost activat manual.",
                     "force_open": "Formularul a fost deschis manual.",
@@ -668,15 +928,137 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             return
 
         active_week = current_week_key()
+        registrations = fetch_registrations(active_week)
         self.send_json(
             {
                 "deleted": deleted,
                 "weekKey": active_week,
                 "weekLabel": week_label_from_key(active_week),
                 "signupWindow": signup_window_payload(),
-                "registrations": fetch_registrations(active_week),
+                "registrations": registrations,
+                "teams": build_team_payload(registrations),
                 "authenticated": True,
                 "message": "Inscrierea selectata a fost stearsa.",
+            }
+        )
+
+    def handle_admin_update_role(self) -> None:
+        if not ADMIN_PASSWORD:
+            self.send_json(
+                {"error": "Panoul de admin nu este configurat."},
+                status=HTTPStatus.SERVICE_UNAVAILABLE,
+            )
+            return
+
+        if not is_admin_authenticated(self.headers.get("Cookie")):
+            self.send_json(
+                {"error": "Autentificare necesara."},
+                status=HTTPStatus.UNAUTHORIZED,
+            )
+            return
+
+        payload = self.read_json_body()
+        if payload is None:
+            return
+
+        try:
+            registration_id = int(payload.get("id", 0))
+        except (TypeError, ValueError):
+            self.send_json(
+                {"error": "ID invalid pentru inscriere."},
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            return
+
+        role = normalize_role(str(payload.get("role", "any")))
+        updated = update_registration_role(registration_id, role)
+        if updated == 0:
+            self.send_json(
+                {"error": "Inscrierea nu a fost gasita."},
+                status=HTTPStatus.NOT_FOUND,
+            )
+            return
+
+        active_week = current_week_key()
+        registrations = fetch_registrations(active_week)
+        self.send_json(
+            {
+                "authenticated": True,
+                "weekKey": active_week,
+                "weekLabel": week_label_from_key(active_week),
+                "signupWindow": signup_window_payload(),
+                "registrations": registrations,
+                "teams": build_team_payload(registrations),
+                "message": f"Postul a fost actualizat la {ROLE_LABELS[role].lower()}.",
+            }
+        )
+
+    def handle_admin_generate_teams(self) -> None:
+        if not ADMIN_PASSWORD:
+            self.send_json(
+                {"error": "Panoul de admin nu este configurat."},
+                status=HTTPStatus.SERVICE_UNAVAILABLE,
+            )
+            return
+
+        if not is_admin_authenticated(self.headers.get("Cookie")):
+            self.send_json(
+                {"error": "Autentificare necesara."},
+                status=HTTPStatus.UNAUTHORIZED,
+            )
+            return
+
+        active_week = current_week_key()
+        registrations = fetch_registrations(active_week)
+        confirmed_players = [row for row in registrations if row["status"] == "confirmed"]
+        if len(confirmed_players) < TEAM_COUNT:
+            self.send_json(
+                {"error": "Ai nevoie de cel putin 3 jucatori confirmati pentru a genera echipe."},
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            return
+
+        teams = generate_balanced_teams(active_week)
+        refreshed = fetch_registrations(active_week)
+        self.send_json(
+            {
+                "authenticated": True,
+                "weekKey": active_week,
+                "weekLabel": week_label_from_key(active_week),
+                "signupWindow": signup_window_payload(),
+                "registrations": refreshed,
+                "teams": teams,
+                "message": "Echipele au fost generate echilibrat pe baza posturilor setate.",
+            }
+        )
+
+    def handle_admin_reset_teams(self) -> None:
+        if not ADMIN_PASSWORD:
+            self.send_json(
+                {"error": "Panoul de admin nu este configurat."},
+                status=HTTPStatus.SERVICE_UNAVAILABLE,
+            )
+            return
+
+        if not is_admin_authenticated(self.headers.get("Cookie")):
+            self.send_json(
+                {"error": "Autentificare necesara."},
+                status=HTTPStatus.UNAUTHORIZED,
+            )
+            return
+
+        active_week = current_week_key()
+        reset_team_assignments(active_week)
+        registrations = fetch_registrations(active_week)
+        self.send_json(
+            {
+                "authenticated": True,
+                "weekKey": active_week,
+                "weekLabel": week_label_from_key(active_week),
+                "signupWindow": signup_window_payload(),
+                "registrations": registrations,
+                "teams": build_team_payload(registrations),
+                "message": "Echipele generate au fost resetate.",
             }
         )
 

@@ -99,6 +99,24 @@ function updateSignupModeButtons() {
   autoModeButton.disabled = currentSignupMode === "auto";
 }
 
+function syncDashboardPayload(payload) {
+  if (!payload) {
+    return;
+  }
+
+  if (typeof payload.authenticated === "boolean") {
+    setAdminAuthenticated(payload.authenticated);
+  }
+
+  if (payload.weekLabel) {
+    weekLabel.textContent = payload.weekLabel;
+    matchDateDisplay.textContent = payload.weekLabel;
+  }
+
+  updateSignupWindowState(payload.signupWindow);
+  renderRows(Array.isArray(payload.registrations) ? payload.registrations : []);
+}
+
 function updateLiveBoard(registrations = []) {
   const confirmed = Math.min(registrations.length, 18);
   const waiting = Math.max(registrations.length - 18, 0);
@@ -240,10 +258,7 @@ async function loadRegistrations() {
   }
 
   const payload = await parseJsonResponse(response);
-  weekLabel.textContent = payload.weekLabel;
-  matchDateDisplay.textContent = payload.weekLabel;
-  updateSignupWindowState(payload.signupWindow);
-  renderRows(payload.registrations);
+  syncDashboardPayload(payload);
 }
 
 function setAdminAuthenticated(authenticated) {
@@ -309,10 +324,7 @@ async function submitRegistration(event) {
     }
 
     form.reset();
-    weekLabel.textContent = payload.weekLabel;
-    matchDateDisplay.textContent = payload.weekLabel;
-    updateSignupWindowState(payload.signupWindow);
-    renderRows(payload.registrations);
+    syncDashboardPayload(payload);
     formMessage.textContent = payload.message;
     flashSuccessPanel("Inscrierea este deja in tabel si a fost marcata in ordinea sosirii.");
   } catch (error) {
@@ -374,11 +386,7 @@ async function clearRegistrations(endpoint, triggerButton) {
       throw new Error(payload.error || "Actiunea nu a putut fi finalizata.");
     }
 
-    weekLabel.textContent = payload.weekLabel;
-    matchDateDisplay.textContent = payload.weekLabel;
-    setAdminAuthenticated(Boolean(payload.authenticated));
-    updateSignupWindowState(payload.signupWindow);
-    renderRows(payload.registrations);
+    syncDashboardPayload(payload);
     adminMessage.textContent = payload.message;
   } catch (error) {
     adminMessage.textContent = error.message;
@@ -409,11 +417,7 @@ async function setSignupMode(mode) {
       throw new Error(payload.error || "Setarea placeholder-ului nu a putut fi schimbata.");
     }
 
-    weekLabel.textContent = payload.weekLabel;
-    matchDateDisplay.textContent = payload.weekLabel;
-    setAdminAuthenticated(Boolean(payload.authenticated));
-    updateSignupWindowState(payload.signupWindow);
-    renderRows(payload.registrations);
+    syncDashboardPayload(payload);
     adminMessage.textContent = payload.message;
   } catch (error) {
     adminMessage.textContent = error.message;
@@ -444,11 +448,7 @@ async function deleteOneRegistration(registrationId, triggerButton) {
       throw new Error(payload.error || "Inscrierea nu a putut fi stearsa.");
     }
 
-    weekLabel.textContent = payload.weekLabel;
-    matchDateDisplay.textContent = payload.weekLabel;
-    setAdminAuthenticated(Boolean(payload.authenticated));
-    updateSignupWindowState(payload.signupWindow);
-    renderRows(payload.registrations);
+    syncDashboardPayload(payload);
     adminMessage.textContent = payload.message;
   } catch (error) {
     adminMessage.textContent = error.message;

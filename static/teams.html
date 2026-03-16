@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Prezenta saptamanala la fotbal</title>
+    <title>Generator echipe fotbal</title>
     <script>
       (() => {
         const storedTheme = localStorage.getItem("theme");
@@ -27,7 +27,7 @@
         <div class="hero-topbar">
           <div class="hero-copy">
             <div class="hero-meta-row">
-              <p class="eyebrow">Inscriere saptamanala</p>
+              <p class="eyebrow">Generator echipe</p>
               <div class="top-controls">
                 <section class="admin-panel hidden" id="admin-panel">
                   <button
@@ -49,10 +49,7 @@
 
                   <div id="admin-content" class="admin-content admin-popover hidden">
                     <div class="admin-copy">
-                      <p>
-                        Autentifica-te ca admin pentru a sterge lista saptamanii curente sau toate
-                        inscrierile din baza de date.
-                      </p>
+                      <p>Autentifica-te ca admin pentru a seta posturile si a genera 3 echipe echilibrate.</p>
                     </div>
 
                     <form id="admin-login-form" class="admin-login-form">
@@ -72,22 +69,13 @@
                     </form>
 
                     <div id="admin-actions" class="admin-actions hidden">
-                      <button id="force-open-button" type="button" class="secondary-button">
-                        Forteaza deschis
+                      <button id="generate-teams-button" type="button" class="secondary-button">
+                        Genereaza 3 echipe
                       </button>
-                      <button id="toggle-placeholder-button" type="button" class="secondary-button">
-                        Forteaza inchis
+                      <button id="reset-teams-button" type="button" class="ghost-button">
+                        Reseteaza echipele
                       </button>
-                      <button id="auto-mode-button" type="button" class="ghost-button">
-                        Mod automat
-                      </button>
-                      <button id="clear-week-button" type="button" class="secondary-button">
-                        Sterge saptamana curenta
-                      </button>
-                      <button id="clear-all-button" type="button" class="danger-button">
-                        Sterge tot istoricul
-                      </button>
-                      <a href="/echipe" class="secondary-button inline-link-button">Pagina echipe</a>
+                      <a href="/" class="secondary-button inline-link-button">Inapoi la prezenta</a>
                       <button id="admin-logout-button" type="button" class="ghost-button">
                         Delogare admin
                       </button>
@@ -120,34 +108,31 @@
                 </button>
               </div>
             </div>
+
             <div class="match-hero">
               <div class="match-copy">
-                <p class="match-kicker">Meciul acestei saptamani</p>
-                <h1>Prezenta saptamanala la fotbal</h1>
+                <p class="match-kicker">Formare echipe pentru saptamana curenta</p>
+                <h1>Generator 3 echipe</h1>
                 <p class="lead">
-                  Completeaza formularul pentru a te inscrie la meciul din saptamana aceasta.
-                  Poti trimite maximum 2 persoane intr-o singura inscriere.
-                </p>
-                <p class="schedule-callout">
-                  Inscrierile incep in fiecare joi la ora 12:00.
+                  Alege postul fiecarui jucator confirmat si apoi genereaza automat 3 echipe cat mai
+                  echilibrate pentru meciul de vineri.
                 </p>
               </div>
 
               <div class="match-date-card">
                 <span class="match-date-label">Data de joc</span>
                 <strong id="match-date-display"></strong>
-                <span class="match-date-subtitle">Fotbal de vineri seara</span>
+                <span class="match-date-subtitle">Primele 18 persoane confirmate</span>
               </div>
             </div>
-            <p id="signup-window-message" class="window-status-callout hidden" aria-live="polite"></p>
 
             <section class="live-board">
               <div class="live-board-header">
                 <div>
-                  <p class="board-label">Stare inscrieri</p>
-                  <h2 id="signup-state-title" class="board-state-title">Deschis acum</h2>
+                  <p class="board-label">Stare generator</p>
+                  <h2 id="builder-state-title" class="board-state-title">In asteptare</h2>
                 </div>
-                <span id="signup-state-badge" class="signup-state-badge">Deschis</span>
+                <span id="builder-state-badge" class="signup-state-badge">Pregatire</span>
               </div>
 
               <div class="board-stats">
@@ -156,94 +141,25 @@
                   <strong id="confirmed-counter">0 / 18</strong>
                 </article>
                 <article class="stat-card">
-                  <span class="stat-label">Locuri ramase</span>
-                  <strong id="spots-left-counter">18</strong>
+                  <span class="stat-label">Echipe create</span>
+                  <strong id="teams-counter">0</strong>
                 </article>
                 <article class="stat-card">
-                  <span class="stat-label">Lista asteptare</span>
-                  <strong id="waiting-counter">0</strong>
+                  <span class="stat-label">Jucatori repartizati</span>
+                  <strong id="assigned-counter">0</strong>
                 </article>
-              </div>
-
-              <div class="progress-block">
-                <div class="progress-copy">
-                  <span>Ritmul inscrierilor</span>
-                  <strong id="progress-caption">0 din 18 locuri confirmate</strong>
-                </div>
-                <div class="progress-track" aria-hidden="true">
-                  <div id="progress-fill" class="progress-fill"></div>
-                </div>
               </div>
             </section>
           </div>
         </div>
 
-        <div class="content-grid">
-          <form id="attendance-form" class="signup-card">
-            <div class="action-card-head">
-              <span class="action-pill">Rezerva-ti locul</span>
-              <h3>Trimite prezenta pentru tine sau pentru inca un coleg</h3>
-              <p>Completezi rapid, iar lista se actualizeaza instant in ordinea inscrierii.</p>
-            </div>
-            <div class="form-controls-shell">
-              <div id="form-locked-overlay" class="form-locked-overlay hidden" aria-hidden="true">
-                <div class="form-locked-card">
-                  <strong>Inscrierile sunt momentan inchise</strong>
-                  <span>Formularul devine activ doar joia incepand cu orele 12:00.</span>
-                </div>
-              </div>
-
-              <label class="field">
-                <span>Nume persoana 1 (exact cum apare in WhatsApp)</span>
-                <input
-                  id="person1"
-                  name="person1"
-                  type="text"
-                  maxlength="80"
-                  placeholder="Ex: Popescu Ion"
-                  required
-                />
-              </label>
-
-              <label class="field">
-                <span>Nume persoana 2 (optional)</span>
-                <input
-                  id="person2"
-                  name="person2"
-                  type="text"
-                  maxlength="80"
-                  placeholder="Ex: Alex"
-                />
-              </label>
-
-              <button id="submit-button" type="submit">
-                <span class="button-label">Trimite inscrierea</span>
-              </button>
-            </div>
-
-            <div id="success-panel" class="success-panel hidden" aria-live="polite">
-              <strong>Loc rezervat</strong>
-              <span>Inscrierea a fost trimisa cu succes. Verifica pozitia din lista din dreapta.</span>
-            </div>
-
-            <div class="hint-box">
-              Primele 18 persoane inscrise apar cu verde. Restul raman pe lista de asteptare,
-              marcati cu galben.
-            </div>
-
-            <p id="form-message" class="form-message" aria-live="polite"></p>
-          </form>
-
+        <div class="content-grid team-page-grid">
           <section class="table-card">
             <div class="table-header">
               <div>
-                <p class="eyebrow">Lista curenta</p>
-                <h2>Prezenta pentru <span id="week-label"></span></h2>
-                <p class="table-subtitle">Ordinea inscrierii decide cine intra direct si cine ramane pe lista de asteptare.</p>
-              </div>
-              <div class="legend">
-                <span class="legend-pill confirmed">Primele 18</span>
-                <span class="legend-pill waiting">Lista de asteptare</span>
+                <p class="eyebrow">Jucatori confirmati</p>
+                <h2>Echipe pentru <span id="week-label"></span></h2>
+                <p class="table-subtitle">Posturile se seteaza doar pentru primele 18 persoane confirmate.</p>
               </div>
             </div>
 
@@ -252,15 +168,26 @@
                 <thead>
                   <tr>
                     <th>#</th>
-                    <th class="time-column">Ora</th>
                     <th>Nume</th>
                     <th>Status</th>
-                    <th id="admin-actions-header" class="hidden">Admin</th>
+                    <th>Post</th>
+                    <th>Echipa</th>
                   </tr>
                 </thead>
                 <tbody id="attendance-table-body"></tbody>
               </table>
             </div>
+          </section>
+
+          <section id="teams-board" class="teams-board">
+            <div class="teams-board-header">
+              <div>
+                <p class="eyebrow">Echipe generate</p>
+                <h3>3 echipe pentru meciul de vineri</h3>
+              </div>
+              <span class="teams-board-note">Generatorul incearca sa echilibreze atacul, mijlocul si apararea.</span>
+            </div>
+            <div id="teams-grid" class="teams-grid"></div>
           </section>
         </div>
       </section>
@@ -268,19 +195,10 @@
 
     <template id="empty-state-template">
       <tr class="empty-row">
-        <td colspan="4">Nu exista inscrieri pentru saptamana aceasta inca.</td>
+        <td colspan="5">Nu exista inca 18 jucatori confirmati pentru aceasta saptamana.</td>
       </tr>
     </template>
 
-    <div id="submission-overlay" class="submission-overlay hidden" aria-hidden="true">
-      <div class="submission-overlay-card">
-        <div class="stadium-glow"></div>
-        <div class="football-overlay-loader"></div>
-        <p class="submission-overlay-title">Se trimite inscrierea...</p>
-        <p class="submission-overlay-text">Mingea e in joc. Te adaugam acum pe lista.</p>
-      </div>
-    </div>
-
-    <script src="/app.js" defer></script>
+    <script src="/teams.js" defer></script>
   </body>
 </html>
