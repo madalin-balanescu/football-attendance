@@ -4,7 +4,7 @@ Weekly football attendance app with a public signup page, admin controls, and a 
 
 ## Preview
 
-![Football Attendance Preview](docs/attendance-preview.svg)
+![Football Attendance Preview](docs/attendance-preview.png)
 
 ## What It Does
 
