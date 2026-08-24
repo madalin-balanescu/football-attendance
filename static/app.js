@@ -11,6 +11,15 @@ const formLockedOverlay = document.getElementById("form-locked-overlay");
 const tableBody = document.getElementById("attendance-table-body");
 const weekLabel = document.getElementById("week-label");
 const matchDateDisplay = document.getElementById("match-date-display");
+const matchKicker = document.getElementById("match-kicker");
+const pageTitle = document.getElementById("page-title");
+const pageDescription = document.getElementById("page-description");
+const scheduleCallout = document.getElementById("schedule-callout");
+const matchDateSubtitle = document.getElementById("match-date-subtitle");
+const lockedScheduleCopy = document.getElementById("locked-schedule-copy");
+const fridayEventLink = document.getElementById("friday-event-link");
+const wednesdayEventLink = document.getElementById("wednesday-event-link");
+const teamsPageLink = document.getElementById("teams-page-link");
 const emptyStateTemplate = document.getElementById("empty-state-template");
 const signupStateTitle = document.getElementById("signup-state-title");
 const signupStateBadge = document.getElementById("signup-state-badge");
@@ -40,6 +49,32 @@ const themeToggle = document.getElementById("theme-toggle");
 const themeToggleLabel = document.getElementById("theme-toggle-label");
 const themeIconSun = document.getElementById("theme-icon-sun");
 const themeIconMoon = document.getElementById("theme-icon-moon");
+const currentPath = (window.location?.pathname || "/").replace(/\/+$/, "") || "/";
+const eventKey = ["/miercuri", "/wednesday"].includes(currentPath)
+  ? "wednesday"
+  : "friday";
+const EVENT_CONTENT = {
+  friday: {
+    documentTitle: "Prezenta saptamanala la fotbal",
+    kicker: "Meciul acestei saptamani",
+    title: "Prezenta saptamanala la fotbal",
+    description:
+      "Completeaza formularul pentru a te inscrie la meciul din saptamana aceasta. Poti trimite maximum 2 persoane intr-o singura inscriere.",
+    schedule: "Inscrierile incep in fiecare joi la ora 12:00.",
+    dateSubtitle: "Fotbal de vineri seara",
+    lockedSchedule: "Formularul devine activ doar joia incepand cu orele 12:00.",
+  },
+  wednesday: {
+    documentTitle: "Prezenta la fotbal miercuri",
+    kicker: "Meciul de miercuri",
+    title: "Prezenta la fotbal - Miercuri",
+    description:
+      "Completeaza formularul pentru a te inscrie la meciul de miercuri, programat intre orele 19:30 si 21:30. Poti trimite maximum 2 persoane intr-o singura inscriere.",
+    schedule: "Inscrierile incep in fiecare luni la ora 19:30.",
+    dateSubtitle: "Miercuri, 19:30 - 21:30",
+    lockedSchedule: "Formularul devine activ in fiecare luni incepand cu ora 19:30.",
+  },
+};
 let isAdminAuthenticated = false;
 let currentTheme = document.documentElement.dataset.theme || "light";
 let isAdminExpanded = false;
@@ -47,6 +82,26 @@ let isSignupWindowOpen = true;
 let currentSignupMode = "auto";
 let isScheduleOpen = true;
 let lastSeenRegistrationId = null;
+
+function eventApiUrl(path) {
+  return `${path}?event=${eventKey}`;
+}
+
+function applyEventContent() {
+  const content = EVENT_CONTENT[eventKey];
+  document.title = content.documentTitle;
+  document.documentElement.dataset.event = eventKey;
+  document.body.dataset.event = eventKey;
+  matchKicker.textContent = content.kicker;
+  pageTitle.textContent = content.title;
+  pageDescription.textContent = content.description;
+  scheduleCallout.textContent = content.schedule;
+  matchDateSubtitle.textContent = content.dateSubtitle;
+  lockedScheduleCopy.textContent = content.lockedSchedule;
+  fridayEventLink.setAttribute("aria-current", eventKey === "friday" ? "page" : "false");
+  wednesdayEventLink.setAttribute("aria-current", eventKey === "wednesday" ? "page" : "false");
+  teamsPageLink.classList.toggle("hidden", eventKey !== "friday");
+}
 
 function setAppReady(isReady) {
   document.body.classList.toggle("app-booting", !isReady);
@@ -132,7 +187,10 @@ function updateLiveBoard(registrations = []) {
   let title = "Inchis";
   let badge = "Inchis";
 
-  if (currentSignupMode === "force_open" || isSignupWindowOpen) {
+  if (confirmed >= 18) {
+    title = "Plin";
+    badge = "Plin";
+  } else if (currentSignupMode === "force_open" || isSignupWindowOpen) {
     if (spotsLeft <= 3 && confirmed > 0) {
       title = "Aproape plin";
       badge = "Aproape plin";
@@ -220,10 +278,12 @@ function renderRows(registrations) {
     createdAtCell.textContent = formatRegistrationTime(registration.createdAt);
 
     const nameCell = document.createElement("td");
+    nameCell.className = "name-cell";
     nameCell.dataset.label = "Nume";
     nameCell.textContent = registration.name;
 
     const statusCell = document.createElement("td");
+    statusCell.className = "status-cell";
     statusCell.dataset.label = "Status";
     const badge = document.createElement("span");
     badge.className = "status-badge";
@@ -252,7 +312,7 @@ function renderRows(registrations) {
 }
 
 async function loadRegistrations() {
-  const response = await fetch("/api/registrations");
+  const response = await fetch(eventApiUrl("/api/registrations"));
   if (!response.ok) {
     throw new Error("Nu am putut incarca lista curenta.");
   }
@@ -314,6 +374,7 @@ async function submitRegistration(event) {
       body: JSON.stringify({
         person1: person1Input.value,
         person2: person2Input.value,
+        event: eventKey,
       }),
     });
 
@@ -406,7 +467,7 @@ async function setSignupMode(mode) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ mode }),
+      body: JSON.stringify({ mode, event: eventKey }),
     });
 
     const payload = await parseJsonResponse(response);
@@ -437,7 +498,7 @@ async function deleteOneRegistration(registrationId, triggerButton) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ id: registrationId }),
+      body: JSON.stringify({ id: registrationId, event: eventKey }),
     });
 
     const payload = await parseJsonResponse(response);
@@ -477,14 +538,15 @@ forceOpenButton.addEventListener("click", () => setSignupMode("force_open"));
 togglePlaceholderButton.addEventListener("click", () => setSignupMode("force_closed"));
 autoModeButton.addEventListener("click", () => setSignupMode("auto"));
 clearWeekButton.addEventListener("click", () =>
-  clearRegistrations("/api/admin/clear-week", clearWeekButton),
+  clearRegistrations(eventApiUrl("/api/admin/clear-week"), clearWeekButton),
 );
 clearAllButton.addEventListener("click", () =>
-  clearRegistrations("/api/admin/clear-all", clearAllButton),
+  clearRegistrations(eventApiUrl("/api/admin/clear-all"), clearAllButton),
 );
 adminLogoutButton.addEventListener("click", logoutAdmin);
 themeToggle.addEventListener("click", toggleTheme);
 
+applyEventContent();
 applyTheme(currentTheme);
 setAdminExpanded(false);
 setAppReady(false);

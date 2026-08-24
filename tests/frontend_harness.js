@@ -222,6 +222,15 @@ function buildAppDocument() {
   makeElement(document, "tbody", "attendance-table-body");
   makeElement(document, "span", "week-label");
   makeElement(document, "strong", "match-date-display");
+  makeElement(document, "p", "match-kicker");
+  makeElement(document, "h1", "page-title");
+  makeElement(document, "p", "page-description");
+  makeElement(document, "p", "schedule-callout");
+  makeElement(document, "span", "match-date-subtitle");
+  makeElement(document, "span", "locked-schedule-copy");
+  makeElement(document, "a", "friday-event-link");
+  makeElement(document, "a", "wednesday-event-link");
+  makeElement(document, "a", "teams-page-link");
   const template = makeElement(document, "template", "empty-state-template");
   const row = new FakeElement("tr", document);
   const cell = new FakeElement("td", document);
@@ -300,8 +309,9 @@ function buildTeamsDocument() {
   return document;
 }
 
-function createFetchMock(responses) {
-  return async (url) => {
+function createFetchMock(responses, requests) {
+  return async (url, options = {}) => {
+    requests.push({ url, options });
     const next = responses.shift();
     if (!next) {
       throw new Error(`Unexpected fetch for ${url}`);
@@ -326,13 +336,15 @@ async function flush() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-function loadScript(scriptName, document, responses) {
+function loadScript(scriptName, document, responses, options = {}) {
   const scriptPath = path.join(__dirname, "..", "static", scriptName);
   const source = fs.readFileSync(scriptPath, "utf8");
   const storage = new Map();
+  const requests = [];
   const context = {
     document,
     window: {
+      location: { pathname: options.pathname || "/" },
       matchMedia: () => ({ matches: false }),
       clearTimeout,
       setTimeout,
@@ -341,7 +353,7 @@ function loadScript(scriptName, document, responses) {
       getItem: (key) => storage.get(key) ?? null,
       setItem: (key, value) => storage.set(key, String(value)),
     },
-    fetch: createFetchMock([...responses]),
+    fetch: createFetchMock([...responses], requests),
     console,
     JSON,
     Promise,
@@ -350,7 +362,7 @@ function loadScript(scriptName, document, responses) {
   };
   context.globalThis = context;
   vm.runInNewContext(source, context, { filename: scriptName });
-  return { context, document };
+  return { context, document, requests };
 }
 
 module.exports = {

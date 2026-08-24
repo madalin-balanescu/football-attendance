@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime
@@ -122,6 +123,54 @@ class AttendanceServerTestCase(unittest.TestCase):
     def test_week_label_from_key_uses_friday_date(self) -> None:
         self.assertEqual(server.week_label_from_key("2026-W12"), "20 Mar 2026")
 
+    def test_week_label_from_key_uses_wednesday_date_for_second_event(self) -> None:
+        self.assertEqual(
+            server.week_label_from_key("2026-W12", server.WEDNESDAY_EVENT),
+            "18 Mar 2026",
+        )
+
+    def test_server_date_format_does_not_depend_on_english_locale(self) -> None:
+        moment = datetime(2026, 5, 6, 19, 30, tzinfo=server.APP_TIMEZONE)
+        self.assertEqual(server.format_romanian_date(moment), "06 Mai 2026")
+        self.assertEqual(
+            server.format_romanian_date(moment, include_time=True),
+            "06 Mai 2026 19:30",
+        )
+
+    def test_existing_database_rows_are_migrated_to_friday_event(self) -> None:
+        server.DB_PATH.unlink()
+        connection = sqlite3.connect(server.DB_PATH)
+        connection.execute(
+            """
+            CREATE TABLE registrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                submitted_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                week_key TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO registrations (submitted_name, created_at, week_key)
+            VALUES (?, ?, ?)
+            """,
+            ("Jucator existent", "2026-03-19 12:00:00", "2026-W12"),
+        )
+        connection.commit()
+        connection.close()
+
+        server.ensure_database()
+
+        self.assertEqual(
+            [row["name"] for row in server.fetch_registrations("2026-W12")],
+            ["Jucator existent"],
+        )
+        self.assertEqual(
+            server.fetch_registrations("2026-W12", server.WEDNESDAY_EVENT),
+            [],
+        )
+
     def test_signup_window_payload_closed_before_opening(self) -> None:
         moment = datetime(2026, 3, 19, 11, 58, tzinfo=server.APP_TIMEZONE)
         with patch("server.signup_mode", return_value="auto"):
@@ -159,6 +208,81 @@ class AttendanceServerTestCase(unittest.TestCase):
         self.assertFalse(payload["isOpen"])
         self.assertFalse(payload["scheduleOpen"])
         self.assertIn("oprite manual", payload["message"])
+
+    def test_wednesday_signup_window_uses_exact_monday_and_wednesday_boundaries(self) -> None:
+        moments_and_expected = [
+            (datetime(2026, 3, 16, 19, 29, 59, tzinfo=server.APP_TIMEZONE), False),
+            (datetime(2026, 3, 16, 19, 30, 0, tzinfo=server.APP_TIMEZONE), True),
+            (datetime(2026, 3, 18, 19, 29, 59, tzinfo=server.APP_TIMEZONE), True),
+            (datetime(2026, 3, 18, 19, 30, 0, tzinfo=server.APP_TIMEZONE), False),
+        ]
+
+        with patch("server.signup_mode", return_value="auto"):
+            for moment, expected in moments_and_expected:
+                with self.subTest(moment=moment):
+                    payload = server.signup_window_payload(moment, server.WEDNESDAY_EVENT)
+                    self.assertEqual(payload["isOpen"], expected)
+                    self.assertEqual(payload["scheduleOpen"], expected)
+
+    def test_friday_and_wednesday_registrations_are_isolated(self) -> None:
+        server.insert_registrations(["Vineri"], self.week_key)
+        server.insert_registrations(
+            ["Miercuri"],
+            self.week_key,
+            server.WEDNESDAY_EVENT,
+        )
+
+        self.assertEqual(
+            [row["name"] for row in server.fetch_registrations(self.week_key)],
+            ["Vineri"],
+        )
+        self.assertEqual(
+            [
+                row["name"]
+                for row in server.fetch_registrations(self.week_key, server.WEDNESDAY_EVENT)
+            ],
+            ["Miercuri"],
+        )
+
+    def test_sunday_cleanup_removes_only_wednesday_history_through_current_week(self) -> None:
+        server.insert_registrations(["Miercuri vechi"], "2026-W11", server.WEDNESDAY_EVENT)
+        server.insert_registrations(["Miercuri curent"], "2026-W12", server.WEDNESDAY_EVENT)
+        server.insert_registrations(["Miercuri viitor"], "2026-W13", server.WEDNESDAY_EVENT)
+        server.insert_registrations(["Vineri curent"], "2026-W12", server.FRIDAY_EVENT)
+
+        deleted = server.cleanup_wednesday_registrations(
+            datetime(2026, 3, 22, 12, 0, tzinfo=server.APP_TIMEZONE)
+        )
+
+        self.assertEqual(deleted, 2)
+        self.assertEqual(
+            [
+                row["name"]
+                for row in server.fetch_registrations("2026-W13", server.WEDNESDAY_EVENT)
+            ],
+            ["Miercuri viitor"],
+        )
+        self.assertEqual(
+            [row["name"] for row in server.fetch_registrations("2026-W12")],
+            ["Vineri curent"],
+        )
+
+    def test_monday_cleanup_catches_up_without_deleting_new_week(self) -> None:
+        server.insert_registrations(["Saptamana trecuta"], "2026-W12", server.WEDNESDAY_EVENT)
+        server.insert_registrations(["Saptamana noua"], "2026-W13", server.WEDNESDAY_EVENT)
+
+        deleted = server.cleanup_wednesday_registrations(
+            datetime(2026, 3, 23, 20, 0, tzinfo=server.APP_TIMEZONE)
+        )
+
+        self.assertEqual(deleted, 1)
+        self.assertEqual(
+            [
+                row["name"]
+                for row in server.fetch_registrations("2026-W13", server.WEDNESDAY_EVENT)
+            ],
+            ["Saptamana noua"],
+        )
 
     def test_admin_session_token_is_recognized_and_invalid_cookie_is_rejected(self) -> None:
         cookie = f"admin_session={server.create_admin_session()}"
@@ -214,6 +338,19 @@ class AttendanceServerTestCase(unittest.TestCase):
         self.assertEqual(status, HTTPStatus.CREATED)
         self.assertEqual(len(payload["registrations"]), 2)
         self.assertEqual(payload["registrations"][0]["status"], "confirmed")
+
+    def test_wednesday_registration_uses_its_own_mode_and_list(self) -> None:
+        server.set_setting("signup_mode_wednesday", "force_open")
+        status, payload, _ = self.dispatch(
+            "POST",
+            "/api/registrations",
+            payload={"person1": "Miercuri", "event": server.WEDNESDAY_EVENT},
+        )
+
+        self.assertEqual(status, HTTPStatus.CREATED)
+        self.assertEqual(payload["eventKey"], server.WEDNESDAY_EVENT)
+        self.assertEqual(payload["registrations"][0]["name"], "Miercuri")
+        self.assertEqual(server.fetch_registrations(self.week_key), [])
 
     def test_registrations_payload_marks_first_18_confirmed_and_rest_waiting(self) -> None:
         self.seed_registrations(count=19)
@@ -273,6 +410,37 @@ class AttendanceServerTestCase(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["deleted"], 4)
         self.assertEqual(payload["registrations"], [])
+
+    def test_admin_clear_week_only_clears_selected_event(self) -> None:
+        server.insert_registrations(["Vineri"], self.week_key)
+        server.insert_registrations(["Miercuri"], self.week_key, server.WEDNESDAY_EVENT)
+        cookie = self.login_admin()
+
+        status, payload, _ = self.dispatch(
+            "POST",
+            "/api/admin/clear-week?event=wednesday",
+            cookie=cookie,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["deleted"], 1)
+        self.assertEqual(payload["eventKey"], server.WEDNESDAY_EVENT)
+        self.assertEqual(payload["registrations"], [])
+        self.assertEqual(len(server.fetch_registrations(self.week_key)), 1)
+
+    def test_admin_signup_override_is_stored_per_event(self) -> None:
+        cookie = self.login_admin()
+        status, payload, _ = self.dispatch(
+            "POST",
+            "/api/admin/signup-mode",
+            payload={"mode": "force_open", "event": server.WEDNESDAY_EVENT},
+            cookie=cookie,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["eventKey"], server.WEDNESDAY_EVENT)
+        self.assertEqual(server.signup_mode(server.WEDNESDAY_EVENT), "force_open")
+        self.assertEqual(server.signup_mode(server.FRIDAY_EVENT), "auto")
 
     def test_admin_can_clear_all_weeks(self) -> None:
         self.seed_registrations(count=3)

@@ -1,6 +1,6 @@
 # Football Attendance
 
-Weekly football attendance app with a public signup page, admin controls, and a dedicated team-builder view for creating 3 balanced teams from the first 18 confirmed players.
+Weekly football attendance app with separate Friday and Wednesday signup lists, admin controls, and a dedicated Friday team-builder view for creating 3 balanced teams from the first 18 confirmed players.
 
 ## Preview
 
@@ -9,7 +9,8 @@ Weekly football attendance app with a public signup page, admin controls, and a 
 ## What It Does
 
 - public weekly signup form with up to 2 names per submission
-- automatic Friday-based week label
+- separate public lists and automatic match dates for Friday and Wednesday
+- distinct blue Friday and green pitch-inspired Wednesday visual themes
 - first 18 players marked as confirmed
 - extra players placed on the waiting list
 - admin login protected by `ADMIN_PASSWORD`
@@ -25,7 +26,9 @@ Weekly football attendance app with a public signup page, admin controls, and a 
 
 ## Main Routes
 
-- `/` - public attendance page
+- `/` - Friday attendance page
+- `/miercuri` - Wednesday attendance page
+- `/wednesday` - alias for the Wednesday attendance page
 - `/echipe` - team builder page
 - `/teams` - alias for the team builder page
 
@@ -49,6 +52,7 @@ python3 server.py
 Then open:
 
 - [http://localhost:8000](http://localhost:8000)
+- [http://localhost:8000/miercuri](http://localhost:8000/miercuri)
 - [http://localhost:8000/echipe](http://localhost:8000/echipe)
 
 ## Environment Variables
@@ -69,14 +73,14 @@ Then open:
 
 After setting `ADMIN_PASSWORD`, the admin panel becomes available in the UI.
 
-Attendance page admin actions:
+Attendance page admin actions are scoped to the selected Friday or Wednesday event:
 
 - force signup open
 - force signup closed
 - switch back to automatic window handling
 - delete one row
 - clear the current week
-- clear all weeks
+- clear all weeks for that event
 
 Team-builder page admin actions:
 
@@ -91,11 +95,19 @@ Team-builder page admin actions:
 
 ## Signup Rules
 
-In automatic mode:
+Friday automatic mode:
 
 - signup opens every Thursday at `11:59`
 - signup closes every Friday at `23:59`
-- outside that window the form is locked
+
+Wednesday automatic mode:
+
+- signup opens every Monday at `19:30`
+- signup closes Wednesday at `19:30`, when the `19:30-21:30` match starts
+- Wednesday registrations are removed on Sunday
+- if Render sleeps through Sunday, cleanup runs before the first request in the new week
+
+Outside each event's window, its form is locked. Friday and Wednesday admin overrides are stored independently.
 
 Admin can override this with:
 
@@ -110,12 +122,14 @@ Registrations store:
 - submitted name
 - creation timestamp
 - ISO week key
+- event key (`friday` or `wednesday`)
 - preferred role
 - generated team assignment
 
 App settings store:
 
-- current signup mode
+- Friday signup mode
+- Wednesday signup mode
 
 ## Deployment
 
@@ -134,6 +148,9 @@ High-level flow:
 Backend coverage includes:
 
 - signup window logic
+- Friday and Wednesday list isolation
+- Sunday cleanup and Monday catch-up
+- database migration of existing rows to Friday
 - registration validation
 - registration ordering
 - admin authentication
@@ -146,6 +163,7 @@ Frontend coverage includes:
 
 - initial dashboard rendering
 - signup form behavior
+- Wednesday route copy and event-aware requests
 - locked state behavior
 - team-builder rendering
 - team generation refresh behavior

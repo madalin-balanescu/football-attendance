@@ -44,6 +44,24 @@ ROLE_LABELS = {
     "back": "Aparare",
     "any": "Oriunde",
 }
+FRIDAY_EVENT = "friday"
+WEDNESDAY_EVENT = "wednesday"
+EVENT_KEYS = {FRIDAY_EVENT, WEDNESDAY_EVENT}
+ROMANIAN_MONTHS = (
+    "",
+    "Ian",
+    "Feb",
+    "Mar",
+    "Apr",
+    "Mai",
+    "Iun",
+    "Iul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+)
 
 
 def using_postgres() -> bool:
@@ -58,6 +76,10 @@ def get_connection():
         connection = psycopg.connect(DATABASE_URL)
         try:
             yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             connection.close()
         return
@@ -66,6 +88,10 @@ def get_connection():
     connection = sqlite3.connect(DB_PATH)
     try:
         yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
     finally:
         connection.close()
 
@@ -85,12 +111,6 @@ def ensure_database() -> None:
             )
             connection.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_registrations_week_created
-                ON registrations (week_key, created_at, id)
-                """
-            )
-            connection.execute(
-                """
                 CREATE TABLE IF NOT EXISTS app_settings (
                     setting_key TEXT PRIMARY KEY,
                     setting_value TEXT NOT NULL
@@ -98,6 +118,12 @@ def ensure_database() -> None:
                 """
             )
             ensure_registration_columns(connection)
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_registrations_event_week_created
+                ON registrations (event_key, week_key, created_at, id)
+                """
+            )
         else:
             connection.execute(
                 """
@@ -111,12 +137,6 @@ def ensure_database() -> None:
             )
             connection.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_registrations_week_created
-                ON registrations (week_key, created_at, id)
-                """
-            )
-            connection.execute(
-                """
                 CREATE TABLE IF NOT EXISTS app_settings (
                     setting_key TEXT PRIMARY KEY,
                     setting_value TEXT NOT NULL
@@ -124,9 +144,16 @@ def ensure_database() -> None:
                 """
             )
             ensure_registration_columns(connection)
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_registrations_event_week_created
+                ON registrations (event_key, week_key, created_at, id)
+                """
+            )
             connection.commit()
 
     set_setting("signup_mode", "auto", only_if_missing=True)
+    set_setting("signup_mode_wednesday", "auto", only_if_missing=True)
 
 
 def ensure_registration_columns(connection) -> None:
@@ -141,6 +168,12 @@ def ensure_registration_columns(connection) -> None:
             """
             ALTER TABLE registrations
             ADD COLUMN IF NOT EXISTS assigned_team INTEGER
+            """
+        )
+        connection.execute(
+            """
+            ALTER TABLE registrations
+            ADD COLUMN IF NOT EXISTS event_key TEXT NOT NULL DEFAULT 'friday'
             """
         )
         return
@@ -161,6 +194,13 @@ def ensure_registration_columns(connection) -> None:
             """
             ALTER TABLE registrations
             ADD COLUMN assigned_team INTEGER
+            """
+        )
+    if "event_key" not in existing_columns:
+        connection.execute(
+            """
+            ALTER TABLE registrations
+            ADD COLUMN event_key TEXT NOT NULL DEFAULT 'friday'
             """
         )
 
@@ -227,8 +267,19 @@ def set_setting(setting_key: str, setting_value: str, only_if_missing: bool = Fa
             connection.commit()
 
 
-def signup_mode() -> str:
-    value = get_setting("signup_mode", "auto").lower()
+def normalize_event(value: str | None) -> str:
+    event_key = str(value or FRIDAY_EVENT).strip().lower()
+    if event_key not in EVENT_KEYS:
+        return FRIDAY_EVENT
+    return event_key
+
+
+def signup_setting_key(event_key: str) -> str:
+    return "signup_mode_wednesday" if normalize_event(event_key) == WEDNESDAY_EVENT else "signup_mode"
+
+
+def signup_mode(event_key: str = FRIDAY_EVENT) -> str:
+    value = get_setting(signup_setting_key(event_key), "auto").lower()
     if value not in {"auto", "force_open", "force_closed"}:
         return "auto"
     return value
@@ -247,14 +298,42 @@ def current_week_key(now: datetime | None = None) -> str:
     return f"{iso_year}-W{iso_week:02d}"
 
 
-def week_label_from_key(week_key: str) -> str:
-    year_text, week_text = week_key.split("-W")
-    friday = datetime.fromisocalendar(int(year_text), int(week_text), 5).replace(tzinfo=APP_TIMEZONE)
-    return friday.strftime("%d %b %Y")
+def format_romanian_date(moment: datetime, include_time: bool = False) -> str:
+    formatted = f"{moment.day:02d} {ROMANIAN_MONTHS[moment.month]} {moment.year}"
+    return f"{formatted} {moment:%H:%M}" if include_time else formatted
 
 
-def signup_window_for_week(week_key: str) -> tuple[datetime, datetime]:
+def week_label_from_key(week_key: str, event_key: str = FRIDAY_EVENT) -> str:
     year_text, week_text = week_key.split("-W")
+    match_day = 3 if normalize_event(event_key) == WEDNESDAY_EVENT else 5
+    match_date = datetime.fromisocalendar(int(year_text), int(week_text), match_day).replace(
+        tzinfo=APP_TIMEZONE
+    )
+    return format_romanian_date(match_date)
+
+
+def signup_window_for_week(
+    week_key: str,
+    event_key: str = FRIDAY_EVENT,
+) -> tuple[datetime, datetime]:
+    year_text, week_text = week_key.split("-W")
+    if normalize_event(event_key) == WEDNESDAY_EVENT:
+        start = datetime.fromisocalendar(int(year_text), int(week_text), 1).replace(
+            hour=19,
+            minute=30,
+            second=0,
+            microsecond=0,
+            tzinfo=APP_TIMEZONE,
+        )
+        end = datetime.fromisocalendar(int(year_text), int(week_text), 3).replace(
+            hour=19,
+            minute=30,
+            second=0,
+            microsecond=0,
+            tzinfo=APP_TIMEZONE,
+        )
+        return start, end
+
     start = datetime.fromisocalendar(int(year_text), int(week_text), 4).replace(
         hour=11,
         minute=59,
@@ -272,12 +351,16 @@ def signup_window_for_week(week_key: str) -> tuple[datetime, datetime]:
     return start, end
 
 
-def signup_window_payload(now: datetime | None = None) -> dict[str, object]:
+def signup_window_payload(
+    now: datetime | None = None,
+    event_key: str = FRIDAY_EVENT,
+) -> dict[str, object]:
+    event_key = normalize_event(event_key)
     current_time = now or datetime.now(APP_TIMEZONE)
     week_key = current_week_key(current_time)
-    start, end = signup_window_for_week(week_key)
-    schedule_open = start <= current_time <= end
-    current_mode = signup_mode()
+    start, end = signup_window_for_week(week_key, event_key)
+    schedule_open = start <= current_time < end if event_key == WEDNESDAY_EVENT else start <= current_time <= end
+    current_mode = signup_mode(event_key)
     if current_mode == "force_open":
         is_open = True
     elif current_mode == "force_closed":
@@ -289,20 +372,34 @@ def signup_window_payload(now: datetime | None = None) -> dict[str, object]:
         message = "Inscrierile sunt oprite manual de admin."
     elif current_mode == "force_open":
         message = "Inscrierile sunt deschise manual de admin."
+    elif is_open and event_key == WEDNESDAY_EVENT:
+        message = "Inscrierile sunt deschise acum, de luni 19:30 pana miercuri la 19:30."
     elif is_open:
         message = "Inscrierile sunt deschise acum, de joi 11:59 pana vineri la 23:59."
     elif current_time < start:
-        message = (
-            f"Inscrierile se deschid joi la 11:59. Fereastra pentru aceasta saptamana incepe pe "
-            f"{start.strftime('%d %b %Y %H:%M')}."
-        )
+        if event_key == WEDNESDAY_EVENT:
+            message = (
+                f"Inscrierile se deschid luni la 19:30. Fereastra pentru aceasta saptamana "
+                f"incepe pe {format_romanian_date(start, include_time=True)}."
+            )
+        else:
+            message = (
+                f"Inscrierile se deschid joi la 11:59. Fereastra pentru aceasta saptamana incepe pe "
+                f"{format_romanian_date(start, include_time=True)}."
+            )
     else:
         next_week_time = current_time + timedelta(days=7)
-        next_start, _ = signup_window_for_week(current_week_key(next_week_time))
-        message = (
-            f"Fereastra curenta s-a inchis vineri la 23:59. Urmatoarea deschidere este joi pe "
-            f"{next_start.strftime('%d %b %Y %H:%M')}."
-        )
+        next_start, _ = signup_window_for_week(current_week_key(next_week_time), event_key)
+        if event_key == WEDNESDAY_EVENT:
+            message = (
+                f"Fereastra curenta s-a inchis miercuri la 19:30. Urmatoarea deschidere este luni pe "
+                f"{format_romanian_date(next_start, include_time=True)}."
+            )
+        else:
+            message = (
+                f"Fereastra curenta s-a inchis vineri la 23:59. Urmatoarea deschidere este joi pe "
+                f"{format_romanian_date(next_start, include_time=True)}."
+            )
 
     return {
         "isOpen": is_open,
@@ -312,6 +409,7 @@ def signup_window_payload(now: datetime | None = None) -> dict[str, object]:
         "start": start.strftime("%Y-%m-%d %H:%M:%S"),
         "end": end.strftime("%Y-%m-%d %H:%M:%S"),
         "timezone": "Europe/Bucharest",
+        "event": event_key,
     }
 
 
@@ -325,17 +423,21 @@ def sanitize_names(payload: dict[str, object]) -> list[str]:
     return names
 
 
-def fetch_registrations(week_key: str) -> list[dict[str, object]]:
+def fetch_registrations(
+    week_key: str,
+    event_key: str = FRIDAY_EVENT,
+) -> list[dict[str, object]]:
+    event_key = normalize_event(event_key)
     with get_connection() as connection:
         if using_postgres():
             rows = connection.execute(
                 """
                 SELECT id, submitted_name, created_at, preferred_role, assigned_team
                 FROM registrations
-                WHERE week_key = %s
+                WHERE week_key = %s AND event_key = %s
                 ORDER BY created_at ASC, id ASC
                 """,
-                (week_key,),
+                (week_key, event_key),
             ).fetchall()
         else:
             connection.row_factory = sqlite3.Row
@@ -343,10 +445,10 @@ def fetch_registrations(week_key: str) -> list[dict[str, object]]:
                 """
                 SELECT id, submitted_name, created_at, preferred_role, assigned_team
                 FROM registrations
-                WHERE week_key = ?
+                WHERE week_key = ? AND event_key = ?
                 ORDER BY datetime(created_at) ASC, id ASC
                 """,
-                (week_key,),
+                (week_key, event_key),
             ).fetchall()
 
     registrations: list[dict[str, object]] = []
@@ -374,24 +476,32 @@ def fetch_registrations(week_key: str) -> list[dict[str, object]]:
     return registrations
 
 
-def insert_registrations(names: list[str], week_key: str) -> None:
+def insert_registrations(
+    names: list[str],
+    week_key: str,
+    event_key: str = FRIDAY_EVENT,
+) -> None:
+    event_key = normalize_event(event_key)
     created_at = datetime.now(APP_TIMEZONE).replace(microsecond=0, tzinfo=None)
     with get_connection() as connection:
         if using_postgres():
             connection.executemany(
                 """
-                INSERT INTO registrations (submitted_name, created_at, week_key)
-                VALUES (%s, %s, %s)
+                INSERT INTO registrations (submitted_name, created_at, week_key, event_key)
+                VALUES (%s, %s, %s, %s)
                 """,
-                [(name, created_at, week_key) for name in names],
+                [(name, created_at, week_key, event_key) for name in names],
             )
         else:
             connection.executemany(
                 """
-                INSERT INTO registrations (submitted_name, created_at, week_key)
-                VALUES (?, ?, ?)
+                INSERT INTO registrations (submitted_name, created_at, week_key, event_key)
+                VALUES (?, ?, ?, ?)
                 """,
-                [(name, created_at.strftime("%Y-%m-%d %H:%M:%S"), week_key) for name in names],
+                [
+                    (name, created_at.strftime("%Y-%m-%d %H:%M:%S"), week_key, event_key)
+                    for name in names
+                ],
             )
             connection.commit()
 
@@ -404,18 +514,18 @@ def update_registration_role(registration_id: int, role: str) -> int:
                 """
                 UPDATE registrations
                 SET preferred_role = %s
-                WHERE id = %s
+                WHERE id = %s AND event_key = %s
                 """,
-                (normalized_role, registration_id),
+                (normalized_role, registration_id, FRIDAY_EVENT),
             ).rowcount
         else:
             updated = connection.execute(
                 """
                 UPDATE registrations
                 SET preferred_role = ?
-                WHERE id = ?
+                WHERE id = ? AND event_key = ?
                 """,
-                (normalized_role, registration_id),
+                (normalized_role, registration_id, FRIDAY_EVENT),
             ).rowcount
             connection.commit()
     return updated
@@ -428,25 +538,25 @@ def reset_team_assignments(week_key: str) -> int:
                 """
                 UPDATE registrations
                 SET assigned_team = NULL
-                WHERE week_key = %s
+                WHERE week_key = %s AND event_key = %s
                 """,
-                (week_key,),
+                (week_key, FRIDAY_EVENT),
             ).rowcount
         else:
             updated = connection.execute(
                 """
                 UPDATE registrations
                 SET assigned_team = NULL
-                WHERE week_key = ?
+                WHERE week_key = ? AND event_key = ?
                 """,
-                (week_key,),
+                (week_key, FRIDAY_EVENT),
             ).rowcount
             connection.commit()
     return updated
 
 
 def generate_balanced_teams(week_key: str) -> list[dict[str, object]]:
-    registrations = fetch_registrations(week_key)
+    registrations = fetch_registrations(week_key, FRIDAY_EVENT)
     confirmed_players = [row for row in registrations if row["status"] == "confirmed"][:GREEN_LIMIT]
 
     if not confirmed_players:
@@ -499,9 +609,9 @@ def generate_balanced_teams(week_key: str) -> list[dict[str, object]]:
                 """
                 UPDATE registrations
                 SET assigned_team = NULL
-                WHERE week_key = %s
+                WHERE week_key = %s AND event_key = %s
                 """,
-                (week_key,),
+                (week_key, FRIDAY_EVENT),
             )
             if assignments:
                 connection.executemany(
@@ -517,9 +627,9 @@ def generate_balanced_teams(week_key: str) -> list[dict[str, object]]:
                 """
                 UPDATE registrations
                 SET assigned_team = NULL
-                WHERE week_key = ?
+                WHERE week_key = ? AND event_key = ?
                 """,
-                (week_key,),
+                (week_key, FRIDAY_EVENT),
             )
             if assignments:
                 connection.executemany(
@@ -532,7 +642,7 @@ def generate_balanced_teams(week_key: str) -> list[dict[str, object]]:
                 )
             connection.commit()
 
-    return build_team_payload(fetch_registrations(week_key))
+    return build_team_payload(fetch_registrations(week_key, FRIDAY_EVENT))
 
 
 def build_team_payload(registrations: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -565,42 +675,111 @@ def build_team_payload(registrations: list[dict[str, object]]) -> list[dict[str,
     return [grouped[index] for index in range(1, TEAM_COUNT + 1) if grouped[index]["players"]]
 
 
-def delete_registrations(week_key: str | None = None) -> int:
+def delete_registrations(
+    week_key: str | None = None,
+    event_key: str | None = None,
+) -> int:
+    normalized_event = normalize_event(event_key) if event_key is not None else None
     with get_connection() as connection:
         if using_postgres():
-            if week_key is None:
+            if week_key is None and normalized_event is None:
                 deleted = connection.execute("DELETE FROM registrations").rowcount
-            else:
+            elif week_key is None:
+                deleted = connection.execute(
+                    "DELETE FROM registrations WHERE event_key = %s",
+                    (normalized_event,),
+                ).rowcount
+            elif normalized_event is None:
                 deleted = connection.execute(
                     "DELETE FROM registrations WHERE week_key = %s",
                     (week_key,),
                 ).rowcount
-        else:
-            if week_key is None:
-                deleted = connection.execute("DELETE FROM registrations").rowcount
             else:
+                deleted = connection.execute(
+                    "DELETE FROM registrations WHERE week_key = %s AND event_key = %s",
+                    (week_key, normalized_event),
+                ).rowcount
+        else:
+            if week_key is None and normalized_event is None:
+                deleted = connection.execute("DELETE FROM registrations").rowcount
+            elif week_key is None:
+                deleted = connection.execute(
+                    "DELETE FROM registrations WHERE event_key = ?",
+                    (normalized_event,),
+                ).rowcount
+            elif normalized_event is None:
                 deleted = connection.execute(
                     "DELETE FROM registrations WHERE week_key = ?",
                     (week_key,),
+                ).rowcount
+            else:
+                deleted = connection.execute(
+                    "DELETE FROM registrations WHERE week_key = ? AND event_key = ?",
+                    (week_key, normalized_event),
                 ).rowcount
             connection.commit()
     return deleted
 
 
-def delete_registration_by_id(registration_id: int) -> int:
+def delete_registration_by_id(
+    registration_id: int,
+    event_key: str = FRIDAY_EVENT,
+) -> int:
+    event_key = normalize_event(event_key)
     with get_connection() as connection:
         if using_postgres():
             deleted = connection.execute(
-                "DELETE FROM registrations WHERE id = %s",
-                (registration_id,),
+                "DELETE FROM registrations WHERE id = %s AND event_key = %s",
+                (registration_id, event_key),
             ).rowcount
         else:
             deleted = connection.execute(
-                "DELETE FROM registrations WHERE id = ?",
-                (registration_id,),
+                "DELETE FROM registrations WHERE id = ? AND event_key = ?",
+                (registration_id, event_key),
             ).rowcount
             connection.commit()
     return deleted
+
+
+def cleanup_wednesday_registrations(now: datetime | None = None) -> int:
+    moment = now or datetime.now(APP_TIMEZONE)
+    week_key = current_week_key(moment)
+    include_current_week = moment.isoweekday() == 7
+    operator = "<=" if include_current_week else "<"
+
+    with get_connection() as connection:
+        placeholder = "%s" if using_postgres() else "?"
+        deleted = connection.execute(
+            f"DELETE FROM registrations WHERE event_key = {placeholder} AND week_key {operator} {placeholder}",
+            (WEDNESDAY_EVENT, week_key),
+        ).rowcount
+    return deleted
+
+
+def event_from_query(query: str) -> str:
+    params = parse_qs(query)
+    return normalize_event(params.get("event", [FRIDAY_EVENT])[0])
+
+
+def attendance_payload(
+    event_key: str = FRIDAY_EVENT,
+    week_key: str | None = None,
+) -> dict[str, object]:
+    event_key = normalize_event(event_key)
+    active_week = week_key or current_week_key()
+    registrations = fetch_registrations(active_week, event_key)
+    return {
+        "eventKey": event_key,
+        "weekKey": active_week,
+        "weekLabel": week_label_from_key(active_week, event_key),
+        "greenLimit": GREEN_LIMIT,
+        "signupWindow": signup_window_payload(event_key=event_key),
+        "registrations": registrations,
+        "teams": build_team_payload(registrations) if event_key == FRIDAY_EVENT else [],
+        "roleOptions": [
+            {"value": value, "label": label} for value, label in ROLE_LABELS.items()
+        ],
+    }
 
 
 def create_admin_session() -> str:
@@ -653,22 +832,11 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/api/registrations":
+            cleanup_wednesday_registrations()
             params = parse_qs(parsed.query)
             week_key = params.get("week", [current_week_key()])[0]
-            registrations = fetch_registrations(week_key)
-            self.send_json(
-                {
-                    "weekKey": week_key,
-                    "weekLabel": week_label_from_key(week_key),
-                    "greenLimit": GREEN_LIMIT,
-                    "signupWindow": signup_window_payload(),
-                    "registrations": registrations,
-                    "teams": build_team_payload(registrations),
-                    "roleOptions": [
-                        {"value": value, "label": label} for value, label in ROLE_LABELS.items()
-                    ],
-                }
-            )
+            event_key = normalize_event(params.get("event", [FRIDAY_EVENT])[0])
+            self.send_json(attendance_payload(event_key, week_key))
             return
         if parsed.path == "/api/admin/status":
             self.send_json(
@@ -681,7 +849,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
         if parsed.path in {"/echipe", "/teams"}:
             self.path = "/teams.html"
             return super().do_GET()
-        if parsed.path == "/":
+        if parsed.path in {"/", "/miercuri", "/miercuri/", "/wednesday", "/wednesday/"}:
             self.path = "/index.html"
         return super().do_GET()
 
@@ -691,10 +859,10 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             self.handle_admin_login()
             return
         if parsed.path == "/api/admin/clear-week":
-            self.handle_admin_clear(current_week_key())
+            self.handle_admin_clear(current_week_key(), event_from_query(parsed.query))
             return
         if parsed.path == "/api/admin/clear-all":
-            self.handle_admin_clear(None)
+            self.handle_admin_clear(None, event_from_query(parsed.query))
             return
         if parsed.path == "/api/admin/signup-mode":
             self.handle_admin_signup_mode()
@@ -736,7 +904,9 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        signup_window = signup_window_payload()
+        cleanup_wednesday_registrations()
+        event_key = normalize_event(str(payload.get("event", FRIDAY_EVENT)))
+        signup_window = signup_window_payload(event_key=event_key)
         if not signup_window["isOpen"]:
             self.send_json(
                 {
@@ -748,23 +918,11 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             return
 
         week_key = current_week_key()
-        insert_registrations(names, week_key)
-        registrations = fetch_registrations(week_key)
-        self.send_json(
-            {
-                "message": "Inscrierea a fost salvata.",
-                "weekKey": week_key,
-                "weekLabel": week_label_from_key(week_key),
-                "greenLimit": GREEN_LIMIT,
-                "signupWindow": signup_window,
-                "registrations": registrations,
-                "teams": build_team_payload(registrations),
-                "roleOptions": [
-                    {"value": value, "label": label} for value, label in ROLE_LABELS.items()
-                ],
-            },
-            status=HTTPStatus.CREATED,
-        )
+        insert_registrations(names, week_key, event_key)
+        response = attendance_payload(event_key, week_key)
+        response["message"] = "Inscrierea a fost salvata."
+        response["signupWindow"] = signup_window
+        self.send_json(response, status=HTTPStatus.CREATED)
 
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
@@ -811,7 +969,11 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def handle_admin_clear(self, week_key: str | None) -> None:
+    def handle_admin_clear(
+        self,
+        week_key: str | None,
+        event_key: str = FRIDAY_EVENT,
+    ) -> None:
         if not ADMIN_PASSWORD:
             self.send_json(
                 {"error": "Panoul de admin nu este configurat."},
@@ -826,22 +988,18 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        deleted = delete_registrations(week_key)
-        registrations = fetch_registrations(current_week_key())
-        response = {
+        event_key = normalize_event(event_key)
+        deleted = delete_registrations(week_key, event_key)
+        response = attendance_payload(event_key)
+        response.update({
             "deleted": deleted,
-            "weekKey": current_week_key(),
-            "weekLabel": week_label_from_key(current_week_key()),
-            "signupWindow": signup_window_payload(),
-            "registrations": registrations,
-            "teams": build_team_payload(registrations),
             "authenticated": True,
             "message": (
                 f"Au fost sterse {deleted} inscrieri din saptamana curenta."
                 if week_key
-                else f"Au fost sterse {deleted} inscrieri din toate saptamanile."
+                else f"Au fost sterse {deleted} inscrieri din istoricul acestui meci."
             ),
-        }
+        })
         self.send_json(response)
 
     def handle_admin_signup_mode(self) -> None:
@@ -871,18 +1029,14 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        set_setting("signup_mode", mode)
+        event_key = normalize_event(str(payload.get("event", FRIDAY_EVENT)))
+        set_setting(signup_setting_key(event_key), mode)
         active_week = current_week_key()
-        registrations = fetch_registrations(active_week)
-        self.send_json(
+        response = attendance_payload(event_key, active_week)
+        response.update(
             {
                 "authenticated": True,
                 "mode": mode,
-                "weekKey": active_week,
-                "weekLabel": week_label_from_key(active_week),
-                "signupWindow": signup_window_payload(),
-                "registrations": registrations,
-                "teams": build_team_payload(registrations),
                 "message": {
                     "force_closed": "Placeholder-ul a fost activat manual.",
                     "force_open": "Formularul a fost deschis manual.",
@@ -890,6 +1044,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
                 }[mode],
             }
         )
+        self.send_json(response)
 
     def handle_admin_delete_one(self) -> None:
         if not ADMIN_PASSWORD:
@@ -919,7 +1074,8 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        deleted = delete_registration_by_id(registration_id)
+        event_key = normalize_event(str(payload.get("event", FRIDAY_EVENT)))
+        deleted = delete_registration_by_id(registration_id, event_key)
         if deleted == 0:
             self.send_json(
                 {"error": "Inscrierea nu a fost gasita."},
@@ -928,19 +1084,15 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             return
 
         active_week = current_week_key()
-        registrations = fetch_registrations(active_week)
-        self.send_json(
+        response = attendance_payload(event_key, active_week)
+        response.update(
             {
                 "deleted": deleted,
-                "weekKey": active_week,
-                "weekLabel": week_label_from_key(active_week),
-                "signupWindow": signup_window_payload(),
-                "registrations": registrations,
-                "teams": build_team_payload(registrations),
                 "authenticated": True,
                 "message": "Inscrierea selectata a fost stearsa.",
             }
         )
+        self.send_json(response)
 
     def handle_admin_update_role(self) -> None:
         if not ADMIN_PASSWORD:
