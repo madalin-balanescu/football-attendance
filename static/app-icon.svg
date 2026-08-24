@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Minge de fotbal pe teren</title>
+  <defs>
+    <linearGradient id="teren" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f66e8" />
+      <stop offset="1" stop-color="#21a66f" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="120" fill="url(#teren)" />
+  <path d="M45 256h422M256 45v422" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="10" />
+  <circle cx="256" cy="256" r="170" fill="#fff" />
+  <path d="m256 151 62 45-24 73h-76l-24-73 62-45Zm-62 45-58-19-35 66 42 56 75-30m100-73 58-19 35 66-42 56-75-30m-151 30-3 70 72 32 44-50m113-52 3 70-72 32-44-50m0 0-75-2m75 2 75-2" fill="none" stroke="#17352a" stroke-linecap="round" stroke-linejoin="round" stroke-width="17" />
+  <path d="m256 151 62 45-24 73h-76l-24-73 62-45Z" fill="#17352a" />
+</svg>

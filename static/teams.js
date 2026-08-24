@@ -29,7 +29,7 @@ const themeIconMoon = document.getElementById("theme-icon-moon");
 let roleOptions = [
   { value: "forward", label: "Atac" },
   { value: "middle", label: "Mijloc" },
-  { value: "back", label: "Aparare" },
+  { value: "back", label: "Apărare" },
   { value: "any", label: "Oriunde" },
 ];
 let isAdminAuthenticated = false;
@@ -44,7 +44,7 @@ function applyTheme(theme) {
   currentTheme = theme;
   document.documentElement.dataset.theme = theme;
   localStorage.setItem("theme", theme);
-  themeToggleLabel.textContent = theme === "dark" ? "Mod luminos" : "Mod intunecat";
+  themeToggleLabel.textContent = theme === "dark" ? "Mod luminos" : "Mod întunecat";
   themeIconSun.classList.toggle("hidden", theme !== "dark");
   themeIconMoon.classList.toggle("hidden", theme === "dark");
 }
@@ -54,7 +54,7 @@ async function parseJsonResponse(response) {
   try {
     return text ? JSON.parse(text) : {};
   } catch {
-    throw new Error("Serverul a trimis un raspuns invalid. Reincarca pagina.");
+    throw new Error("Serverul a trimis un răspuns invalid. Reîncarcă pagina.");
   }
 }
 
@@ -81,8 +81,8 @@ function updateBuilderStats(registrations, teams) {
   assignedCounter.textContent = `${assigned}`;
 
   if (!confirmed.length) {
-    builderStateTitle.textContent = "In asteptare";
-    builderStateBadge.textContent = "Fara jucatori";
+    builderStateTitle.textContent = "În așteptare";
+    builderStateBadge.textContent = "Fără jucători";
     return;
   }
 
@@ -92,8 +92,8 @@ function updateBuilderStats(registrations, teams) {
     return;
   }
 
-  builderStateTitle.textContent = "Pregatire lot";
-  builderStateBadge.textContent = "In lucru";
+  builderStateTitle.textContent = "Pregătire lot";
+  builderStateBadge.textContent = "În lucru";
 }
 
 function renderRows(registrations) {
@@ -175,7 +175,7 @@ function renderTeams(teams) {
     const title = document.createElement("strong");
     title.textContent = team.label;
     const meta = document.createElement("span");
-    meta.textContent = `${team.players.length} jucatori`;
+    meta.textContent = `${team.players.length} jucători`;
     heading.append(title, meta);
 
     const balance = document.createElement("div");
@@ -183,7 +183,7 @@ function renderTeams(teams) {
     balance.innerHTML = `
       <span>Atac ${team.counts.forward}</span>
       <span>Mijloc ${team.counts.middle}</span>
-      <span>Aparare ${team.counts.back}</span>
+      <span>Apărare ${team.counts.back}</span>
     `;
 
     header.append(heading, balance);
@@ -252,7 +252,7 @@ async function loadRegistrations() {
     credentials: "same-origin",
   });
   if (!response.ok) {
-    throw new Error("Nu am putut incarca generatorul de echipe.");
+    throw new Error("Nu am putut încărca generatorul de echipe.");
   }
 
   const payload = await parseJsonResponse(response);
@@ -263,7 +263,7 @@ async function loginAdmin(event) {
   event.preventDefault();
   adminMessage.textContent = "";
   adminLoginButton.disabled = true;
-  adminLoginButton.textContent = "Se verifica...";
+  adminLoginButton.textContent = "Se verifică...";
 
   try {
     const response = await fetch("/api/admin/login", {
@@ -277,7 +277,7 @@ async function loginAdmin(event) {
 
     const payload = await parseJsonResponse(response);
     if (!response.ok) {
-      throw new Error(payload.error || "Autentificarea a esuat.");
+      throw new Error(payload.error || "Autentificarea a eșuat.");
     }
 
     setAdminAuthenticated(true);
@@ -287,7 +287,7 @@ async function loginAdmin(event) {
     adminMessage.textContent = error.message;
   } finally {
     adminLoginButton.disabled = false;
-    adminLoginButton.textContent = "Intra in panoul admin";
+    adminLoginButton.textContent = "Intră în panoul de administrare";
   }
 }
 
@@ -337,7 +337,7 @@ async function runTeamAction(endpoint, triggerButton) {
       if (response.status === 401) {
         setAdminAuthenticated(false);
       }
-      throw new Error(payload.error || "Actiunea pentru echipe nu a putut fi finalizata.");
+      throw new Error(payload.error || "Acțiunea pentru echipe nu a putut fi finalizată.");
     }
 
     syncPayload(payload);
@@ -355,7 +355,13 @@ async function logoutAdmin() {
     credentials: "same-origin",
   });
   setAdminAuthenticated(false);
-  adminMessage.textContent = "Te-ai delogat din panoul de admin.";
+  adminMessage.textContent = "Te-ai delogat din panoul de administrare.";
+}
+
+function registerServiceWorker() {
+  if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+  }
 }
 
 function toggleTheme() {
@@ -376,6 +382,7 @@ themeToggle.addEventListener("click", toggleTheme);
 applyTheme(currentTheme);
 setAdminExpanded(false);
 setAppReady(false);
+registerServiceWorker();
 
 Promise.allSettled([loadAdminStatus(), loadRegistrations()]).then((results) => {
   const registrationResult = results[1];

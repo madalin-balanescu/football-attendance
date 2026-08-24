@@ -98,7 +98,7 @@ class AttendanceServerTestCase(unittest.TestCase):
             payload={"password": "test-admin"},
         )
         self.assertEqual(status, 200)
-        self.assertEqual(payload["message"], "Autentificare reusita.")
+        self.assertEqual(payload["message"], "Autentificare reușită.")
         return headers["Set-Cookie"][0].split(";", 1)[0]
 
     def seed_registrations(self, count: int = 18) -> list[dict[str, object]]:
@@ -136,6 +136,15 @@ class AttendanceServerTestCase(unittest.TestCase):
             server.format_romanian_date(moment, include_time=True),
             "06 Mai 2026 19:30",
         )
+
+    def test_cache_policy_keeps_api_live_and_static_assets_fast(self) -> None:
+        self.assertEqual(server.cache_control_for_path("/api/registrations?event=friday"), "no-store")
+        self.assertEqual(server.cache_control_for_path("/service-worker.js"), "no-cache")
+        self.assertEqual(
+            server.cache_control_for_path("/ui-enhancements.css"),
+            "public, max-age=86400",
+        )
+        self.assertIsNone(server.cache_control_for_path("/"))
 
     def test_existing_database_rows_are_migrated_to_friday_event(self) -> None:
         server.DB_PATH.unlink()
@@ -185,7 +194,7 @@ class AttendanceServerTestCase(unittest.TestCase):
             payload = server.signup_window_payload(moment)
         self.assertTrue(payload["isOpen"])
         self.assertTrue(payload["scheduleOpen"])
-        self.assertIn("Inscrierile sunt deschise acum", payload["message"])
+        self.assertIn("Înscrierile sunt deschise acum", payload["message"])
 
     def test_signup_window_payload_closed_after_window(self) -> None:
         moment = datetime(2026, 3, 21, 0, 1, tzinfo=server.APP_TIMEZONE)
@@ -193,7 +202,11 @@ class AttendanceServerTestCase(unittest.TestCase):
             payload = server.signup_window_payload(moment)
         self.assertFalse(payload["isOpen"])
         self.assertFalse(payload["scheduleOpen"])
-        self.assertIn("Urmatoarea deschidere", payload["message"])
+        self.assertIn("Următoarea deschidere", payload["message"])
+        self.assertGreater(
+            datetime.fromisoformat(payload["nextOpen"]),
+            moment,
+        )
 
     def test_signup_window_payload_force_modes_override_schedule(self) -> None:
         moment = datetime(2026, 3, 18, 10, 0, tzinfo=server.APP_TIMEZONE)
@@ -307,7 +320,7 @@ class AttendanceServerTestCase(unittest.TestCase):
             payload={"password": "gresita"},
         )
         self.assertEqual(status, HTTPStatus.UNAUTHORIZED)
-        self.assertEqual(payload["error"], "Parola de admin este incorecta.")
+        self.assertEqual(payload["error"], "Parola de administrator este incorectă.")
 
     def test_registration_requires_at_least_one_name(self) -> None:
         status, payload, _ = self.dispatch(
@@ -316,7 +329,7 @@ class AttendanceServerTestCase(unittest.TestCase):
             payload={"person1": "   ", "person2": ""},
         )
         self.assertEqual(status, HTTPStatus.BAD_REQUEST)
-        self.assertEqual(payload["error"], "Completeaza cel putin un nume.")
+        self.assertEqual(payload["error"], "Completează cel puțin un nume.")
 
     def test_registration_is_blocked_when_signup_is_force_closed(self) -> None:
         server.set_setting("signup_mode", "force_closed")
@@ -338,6 +351,10 @@ class AttendanceServerTestCase(unittest.TestCase):
         self.assertEqual(status, HTTPStatus.CREATED)
         self.assertEqual(len(payload["registrations"]), 2)
         self.assertEqual(payload["registrations"][0]["status"], "confirmed")
+        self.assertEqual(
+            payload["submittedRegistrationIds"],
+            [registration["id"] for registration in payload["registrations"]],
+        )
 
     def test_wednesday_registration_uses_its_own_mode_and_list(self) -> None:
         server.set_setting("signup_mode_wednesday", "force_open")
@@ -368,7 +385,7 @@ class AttendanceServerTestCase(unittest.TestCase):
             cookie=cookie,
         )
         self.assertEqual(status, HTTPStatus.BAD_REQUEST)
-        self.assertEqual(payload["error"], "ID invalid pentru inscriere.")
+        self.assertEqual(payload["error"], "ID invalid pentru înscriere.")
 
     def test_invalid_role_is_normalized_to_any(self) -> None:
         registrations = self.seed_registrations(count=1)
@@ -387,7 +404,7 @@ class AttendanceServerTestCase(unittest.TestCase):
         cookie = self.login_admin()
         status, payload, _ = self.dispatch("POST", "/api/admin/generate-teams", cookie=cookie)
         self.assertEqual(status, HTTPStatus.BAD_REQUEST)
-        self.assertIn("cel putin 3", payload["error"])
+        self.assertIn("cel puțin 3", payload["error"])
 
     def test_admin_can_delete_single_registration(self) -> None:
         registrations = self.seed_registrations(count=3)
@@ -519,7 +536,7 @@ class AttendanceServerTestCase(unittest.TestCase):
         self.seed_registrations()
         status, payload, _ = self.dispatch("POST", "/api/admin/generate-teams")
         self.assertEqual(status, 401)
-        self.assertEqual(payload["error"], "Autentificare necesara.")
+        self.assertEqual(payload["error"], "Autentificare necesară.")
 
     def test_registrations_payload_exposes_roles_and_team_metadata(self) -> None:
         registrations = self.seed_registrations()

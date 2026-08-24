@@ -15,7 +15,7 @@ function appPayload(overrides = {}) {
       isOpen: true,
       scheduleOpen: true,
       mode: "auto",
-      message: "Inscrierile sunt deschise acum.",
+      message: "Înscrierile sunt deschise acum.",
     },
     registrations: [
       {
@@ -64,7 +64,7 @@ function teamsPayload(overrides = {}) {
     roleOptions: [
       { value: "forward", label: "Atac" },
       { value: "middle", label: "Mijloc" },
-      { value: "back", label: "Aparare" },
+      { value: "back", label: "Apărare" },
       { value: "any", label: "Oriunde" },
     ],
     ...overrides,
@@ -85,9 +85,22 @@ test("app.js bootstraps dashboard and clears boot state after initial fetches", 
   assert.equal(loaded.getElementById("match-date-display").textContent, "20 Mar 2026");
   assert.equal(loaded.getElementById("confirmed-counter").textContent, "1 / 18");
   assert.equal(loaded.getElementById("signup-state-title").textContent, "Deschis acum");
+  assert.equal(loaded.getElementById("content-grid").classList.contains("is-closed"), false);
+  assert.equal(loaded.getElementById("match-location-name").textContent, "Magic Stadium - Tudor");
+  assert.match(
+    loaded.getElementById("match-location-link").getAttribute("href"),
+    /Magic\+Stadium/,
+  );
   assert.equal(loaded.getElementById("attendance-table-body").children.length, 1);
+  const renderedRow = loaded.getElementById("attendance-table-body").children[0];
+  const renderedTime = renderedRow.children[1];
+  assert.equal(renderedTime.getAttribute("aria-label"), "19.03 12:00:00");
+  assert.equal(renderedTime.children[0].classList.contains("time-date"), true);
+  assert.equal(renderedTime.children[0].textContent, "19.03");
+  assert.equal(renderedTime.children[1].classList.contains("time-clock"), true);
+  assert.equal(renderedTime.children[1].textContent, "12:00:00");
   assert.equal(
-    loaded.getElementById("attendance-table-body").children[0].children[2].classList.contains("name-cell"),
+    renderedRow.children[2].classList.contains("name-cell"),
     true,
   );
 });
@@ -135,13 +148,21 @@ test("app.js submitRegistration updates message and resets form on success", asy
             {
               id: 2,
               position: 2,
-              name: "Vlad",
+              name: "Ion",
               createdAt: "2026-03-19 12:01:00",
+              status: "confirmed",
+            },
+            {
+              id: 3,
+              position: 3,
+              name: "Vlad",
+              createdAt: "2026-03-19 12:01:01",
               status: "confirmed",
             },
           ],
         }),
-        message: "Inscrierea a fost salvata.",
+        message: "Înscrierea a fost salvată.",
+        submittedRegistrationIds: [2, 3],
       },
     },
   ]);
@@ -152,10 +173,19 @@ test("app.js submitRegistration updates message and resets form on success", asy
 
   await context.submitRegistration({ preventDefault() {} });
 
-  assert.equal(document.getElementById("form-message").textContent, "Inscrierea a fost salvata.");
+  assert.equal(document.getElementById("form-message").textContent, "Înscrierea a fost salvată.");
   assert.equal(document.getElementById("person1").value, "");
   assert.equal(document.getElementById("person2").value, "");
-  assert.equal(document.getElementById("attendance-table-body").children.length, 2);
+  assert.equal(document.getElementById("attendance-table-body").children.length, 3);
+  assert.equal(document.getElementById("success-title").textContent, "Locuri înregistrate");
+  assert.equal(
+    document.getElementById("success-details").children[0].textContent,
+    "Ion: poziția 2 · Confirmat",
+  );
+  assert.equal(
+    document.getElementById("success-details").children[1].textContent,
+    "Vlad: poziția 3 · Confirmat",
+  );
   assert.equal(JSON.parse(requests[2].options.body).event, "friday");
 });
 
@@ -171,7 +201,7 @@ test("app.js configures the Wednesday page and sends requests to the Wednesday e
         status: 201,
         body: {
           ...appPayload({ weekLabel: "26 Aug 2026" }),
-          message: "Inscrierea a fost salvata.",
+          message: "Înscrierea a fost salvată.",
         },
       },
     ],
@@ -180,18 +210,23 @@ test("app.js configures the Wednesday page and sends requests to the Wednesday e
 
   await flush();
 
-  assert.equal(document.title, "Prezenta la fotbal miercuri");
+  assert.equal(document.title, "Prezență la fotbal miercuri");
   assert.equal(document.documentElement.dataset.event, "wednesday");
   assert.equal(document.body.dataset.event, "wednesday");
-  assert.equal(document.getElementById("page-title").textContent, "Prezenta la fotbal - Miercuri");
-  assert.match(document.getElementById("page-description").textContent, /19:30 si 21:30/);
+  assert.equal(document.getElementById("page-title").textContent, "Prezență la fotbal - Miercuri");
+  assert.match(document.getElementById("page-description").textContent, /19:30 și 21:30/);
   assert.equal(
     document.getElementById("schedule-callout").textContent,
-    "Inscrierile incep in fiecare luni la ora 19:30.",
+    "Înscrierile încep în fiecare luni la ora 19:30.",
   );
   assert.equal(
     document.getElementById("wednesday-event-link").getAttribute("aria-current"),
     "page",
+  );
+  assert.equal(document.getElementById("match-location-name").textContent, "D&C Sport - Siraj");
+  assert.match(
+    document.getElementById("match-location-link").getAttribute("href"),
+    /D%26C\+Sport/,
   );
   assert.equal(document.getElementById("teams-page-link").classList.contains("hidden"), true);
   assert.equal(requests[1].url, "/api/registrations?event=wednesday");
@@ -225,8 +260,75 @@ test("app.js locks form and button when signup window is closed", async () => {
   assert.equal(document.getElementById("submit-button").disabled, true);
   assert.equal(
     document.getElementById("submit-button").querySelector(".button-label").textContent,
-    "Inscrierile sunt inchise",
+    "Înscrierile sunt închise",
   );
+  assert.equal(document.getElementById("content-grid").classList.contains("is-closed"), true);
+});
+
+test("app.js shows an authoritative countdown for the next automatic opening", async () => {
+  const document = buildAppDocument();
+  loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: false } },
+    {
+      body: appPayload({
+        signupWindow: {
+          isOpen: false,
+          scheduleOpen: false,
+          mode: "auto",
+          message: "",
+          nextOpen: "2099-03-19T11:59:00+02:00",
+          serverNow: "2099-03-18T11:59:00+02:00",
+        },
+      }),
+    },
+  ]);
+
+  await flush();
+
+  assert.equal(document.getElementById("countdown-card").classList.contains("hidden"), false);
+  assert.equal(document.getElementById("countdown-label").textContent, "Următoarea deschidere");
+  assert.match(document.getElementById("countdown-display").textContent, /1 zi/);
+});
+
+test("app.js success feedback identifies a newly waitlisted player", async () => {
+  const document = buildAppDocument();
+  const { context } = loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: false } },
+    { body: appPayload() },
+  ]);
+  const registrations = Array.from({ length: 19 }, (_, index) => ({
+    id: index + 1,
+    position: index + 1,
+    name: `Jucător ${index + 1}`,
+    createdAt: "2026-08-24 19:30:00",
+    status: index < 18 ? "confirmed" : "waiting",
+  }));
+
+  await flush();
+  context.flashSuccessPanel({ registrations, submittedRegistrationIds: [19] });
+
+  assert.equal(
+    document.getElementById("success-details").children[0].textContent,
+    "Jucător 19: poziția 19 · Lista de așteptare",
+  );
+  assert.match(document.getElementById("success-summary").textContent, /lista de așteptare/);
+});
+
+test("app.js falls back to the last saved list when a refresh loses connectivity", async () => {
+  const document = buildAppDocument();
+  const { context } = loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: false } },
+    { body: appPayload() },
+    { error: new Error("offline") },
+  ]);
+
+  await flush();
+  await context.loadRegistrations();
+
+  assert.equal(document.body.classList.contains("is-offline"), true);
+  assert.equal(document.getElementById("connection-status").textContent, "Date salvate local");
+  assert.equal(document.getElementById("person1").disabled, true);
+  assert.equal(document.getElementById("attendance-table-body").children.length, 1);
 });
 
 test("teams.js renders confirmed players only and shows generated teams", async () => {
@@ -241,7 +343,7 @@ test("teams.js renders confirmed players only and shows generated teams", async 
   assert.equal(document.body.classList.contains("app-booting"), false);
   assert.equal(document.getElementById("attendance-table-body").children.length, 1);
   assert.equal(document.getElementById("teams-grid").children.length, 1);
-  assert.equal(document.getElementById("builder-state-title").textContent, "Pregatire lot");
+  assert.equal(document.getElementById("builder-state-title").textContent, "Pregătire lot");
   assert.equal(document.getElementById("assigned-counter").textContent, "1");
 });
 
@@ -266,7 +368,7 @@ test("teams.js shows role selectors for authenticated admin and can refresh gene
             id: 2,
             label: "Echipa 2",
             counts: { forward: 0, middle: 0, back: 1 },
-            players: [{ id: 4, name: "Mihai", roleLabel: "Aparare" }],
+            players: [{ id: 4, name: "Mihai", roleLabel: "Apărare" }],
           },
           {
             id: 3,

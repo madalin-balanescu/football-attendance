@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#2f66e8" />
+    <meta name="description" content="Generator pentru trei echipe de fotbal echilibrate." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Generator echipe fotbal</title>
     <script>
       (() => {
@@ -19,10 +22,15 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap"
       rel="stylesheet"
     />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/app-icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/app-icon-192.png" />
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/ui-enhancements.css" />
   </head>
   <body class="app-booting">
-    <main class="page-shell">
+    <a class="skip-link" href="#continut-principal">Sari la conținutul principal</a>
+    <main id="continut-principal" class="page-shell">
       <section class="hero-card">
         <div class="hero-topbar">
           <div class="hero-copy">
@@ -49,7 +57,7 @@
 
                   <div id="admin-content" class="admin-content admin-popover hidden">
                     <div class="admin-copy">
-                      <p>Autentifica-te ca admin pentru a seta posturile si a genera 3 echipe echilibrate.</p>
+                      <p>Autentifică-te ca administrator pentru a seta posturile și a genera 3 echipe echilibrate.</p>
                     </div>
 
                     <form id="admin-login-form" class="admin-login-form">
@@ -64,18 +72,18 @@
                         />
                       </label>
                       <button id="admin-login-button" type="submit" class="secondary-button">
-                        Intra in panoul admin
+                        Intră în panoul de administrare
                       </button>
                     </form>
 
                     <div id="admin-actions" class="admin-actions hidden">
                       <button id="generate-teams-button" type="button" class="secondary-button">
-                        Genereaza 3 echipe
+                        Generează 3 echipe
                       </button>
                       <button id="reset-teams-button" type="button" class="ghost-button">
-                        Reseteaza echipele
+                        Resetează echipele
                       </button>
-                      <a href="/" class="secondary-button inline-link-button">Inapoi la prezenta</a>
+                      <a href="/" class="secondary-button inline-link-button">Înapoi la prezență</a>
                       <button id="admin-logout-button" type="button" class="ghost-button">
                         Delogare admin
                       </button>
@@ -89,11 +97,11 @@
                   id="theme-toggle"
                   type="button"
                   class="theme-toggle icon-button"
-                  aria-label="Schimba tema"
-                  title="Schimba tema"
+                  aria-label="Schimbă tema"
+                  title="Schimbă tema"
                 >
                   <span class="theme-toggle-track">
-                    <span id="theme-toggle-label" class="sr-only">Mod intunecat</span>
+                    <span id="theme-toggle-label" class="sr-only">Mod întunecat</span>
                     <svg id="theme-icon-sun" class="icon-svg hidden" viewBox="0 0 24 24" aria-hidden="true">
                       <path
                         d="M12 4.2a.9.9 0 0 1 .9.9v1.7a.9.9 0 1 1-1.8 0V5.1a.9.9 0 0 1 .9-.9Zm0 13a4.2 4.2 0 1 0 0-8.4 4.2 4.2 0 0 0 0 8.4Zm0 1.8a6 6 0 1 1 0-12 6 6 0 0 1 0 12Zm7-7.8a.9.9 0 0 1 0 1.8h-1.7a.9.9 0 1 1 0-1.8H19ZM8.4 18.3a.9.9 0 0 1 0 1.2l-1.2 1.2a.9.9 0 0 1-1.2-1.2l1.2-1.2a.9.9 0 0 1 1.2 0Zm9.2 0 1.2 1.2a.9.9 0 1 1-1.2 1.2l-1.2-1.2a.9.9 0 0 1 1.2-1.2ZM12 17.3a.9.9 0 0 1 .9.9v1.7a.9.9 0 1 1-1.8 0v-1.7a.9.9 0 0 1 .9-.9Zm-7-6.1a.9.9 0 1 1 0 1.8H3.3a.9.9 0 1 1 0-1.8H5Zm1-5.9 1.2 1.2A.9.9 0 1 1 6 7.7L4.8 6.5a.9.9 0 1 1 1.2-1.2Zm12 0a.9.9 0 0 1 0 1.2l-1.2 1.2a.9.9 0 0 1-1.2-1.2l1.2-1.2a.9.9 0 0 1 1.2 0Z"
@@ -111,10 +119,10 @@
 
             <div class="match-hero">
               <div class="match-copy">
-                <p class="match-kicker">Formare echipe pentru saptamana curenta</p>
+                <p class="match-kicker">Formare echipe pentru săptămâna curentă</p>
                 <h1>Generator 3 echipe</h1>
                 <p class="lead">
-                  Alege postul fiecarui jucator confirmat si apoi genereaza automat 3 echipe cat mai
+                  Alege postul fiecărui jucător confirmat și apoi generează automat 3 echipe cât mai
                   echilibrate pentru meciul de vineri.
                 </p>
               </div>
@@ -129,15 +137,15 @@
             <section class="live-board">
               <div class="live-board-header">
                 <div>
-                  <p class="board-label">Stare generator</p>
-                  <h2 id="builder-state-title" class="board-state-title">In asteptare</h2>
+                  <p class="board-label">Starea generatorului</p>
+                  <h2 id="builder-state-title" class="board-state-title">În așteptare</h2>
                 </div>
-                <span id="builder-state-badge" class="signup-state-badge">Pregatire</span>
+                <span id="builder-state-badge" class="signup-state-badge">Pregătire</span>
               </div>
 
               <div class="board-stats">
                 <article class="stat-card">
-                  <span class="stat-label">Confirmati</span>
+                  <span class="stat-label">Confirmați</span>
                   <strong id="confirmed-counter">0 / 18</strong>
                 </article>
                 <article class="stat-card">
@@ -145,7 +153,7 @@
                   <strong id="teams-counter">0</strong>
                 </article>
                 <article class="stat-card">
-                  <span class="stat-label">Jucatori repartizati</span>
+                  <span class="stat-label">Jucători repartizați</span>
                   <strong id="assigned-counter">0</strong>
                 </article>
               </div>
@@ -157,14 +165,15 @@
           <section class="table-card">
             <div class="table-header">
               <div>
-                <p class="eyebrow">Jucatori confirmati</p>
+                <p class="eyebrow">Jucători confirmați</p>
                 <h2>Echipe pentru <span id="week-label"></span></h2>
-                <p class="table-subtitle">Posturile se seteaza doar pentru primele 18 persoane confirmate.</p>
+                <p class="table-subtitle">Posturile se setează doar pentru primele 18 persoane confirmate.</p>
               </div>
             </div>
 
             <div class="table-wrap">
               <table>
+                <caption class="sr-only">Jucătorii confirmați și posturile alocate</caption>
                 <thead>
                   <tr>
                     <th>#</th>
@@ -185,7 +194,7 @@
                 <p class="eyebrow">Echipe generate</p>
                 <h3>3 echipe pentru meciul de vineri</h3>
               </div>
-              <span class="teams-board-note">Generatorul incearca sa echilibreze atacul, mijlocul si apararea.</span>
+              <span class="teams-board-note">Generatorul încearcă să echilibreze atacul, mijlocul și apărarea.</span>
             </div>
             <div id="teams-grid" class="teams-grid"></div>
           </section>
@@ -195,7 +204,7 @@
 
     <template id="empty-state-template">
       <tr class="empty-row">
-        <td colspan="5">Nu exista inca 18 jucatori confirmati pentru aceasta saptamana.</td>
+        <td colspan="5">Nu există încă 18 jucători confirmați pentru această săptămână.</td>
       </tr>
     </template>
 

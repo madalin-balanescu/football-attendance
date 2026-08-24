@@ -41,7 +41,7 @@ ROLE_OPTIONS = {"forward", "middle", "back", "any"}
 ROLE_LABELS = {
     "forward": "Atac",
     "middle": "Mijloc",
-    "back": "Aparare",
+    "back": "Apărare",
     "any": "Oriunde",
 }
 FRIDAY_EVENT = "friday"
@@ -62,6 +62,18 @@ ROMANIAN_MONTHS = (
     "Nov",
     "Dec",
 )
+STATIC_CACHE_SUFFIXES = {".css", ".js", ".svg", ".png", ".webmanifest"}
+
+
+def cache_control_for_path(raw_path: str) -> str | None:
+    path = urlparse(raw_path).path
+    if path.startswith("/api/"):
+        return "no-store"
+    if path == "/service-worker.js" or path.endswith(".html"):
+        return "no-cache"
+    if Path(path).suffix in STATIC_CACHE_SUFFIXES:
+        return "public, max-age=86400"
+    return None
 
 
 def using_postgres() -> bool:
@@ -368,23 +380,29 @@ def signup_window_payload(
     else:
         is_open = schedule_open
 
+    if current_time < start:
+        next_open = start
+    else:
+        next_week_time = current_time + timedelta(days=7)
+        next_open, _ = signup_window_for_week(current_week_key(next_week_time), event_key)
+
     if current_mode == "force_closed":
-        message = "Inscrierile sunt oprite manual de admin."
+        message = "Înscrierile sunt oprite manual de administrator."
     elif current_mode == "force_open":
-        message = "Inscrierile sunt deschise manual de admin."
+        message = "Înscrierile sunt deschise manual de administrator."
     elif is_open and event_key == WEDNESDAY_EVENT:
-        message = "Inscrierile sunt deschise acum, de luni 19:30 pana miercuri la 19:30."
+        message = "Înscrierile sunt deschise acum, de luni la 19:30 până miercuri la 19:30."
     elif is_open:
-        message = "Inscrierile sunt deschise acum, de joi 11:59 pana vineri la 23:59."
+        message = "Înscrierile sunt deschise acum, de joi la 11:59 până vineri la 23:59."
     elif current_time < start:
         if event_key == WEDNESDAY_EVENT:
             message = (
-                f"Inscrierile se deschid luni la 19:30. Fereastra pentru aceasta saptamana "
-                f"incepe pe {format_romanian_date(start, include_time=True)}."
+                f"Înscrierile se deschid luni la 19:30. Fereastra pentru această săptămână "
+                f"începe pe {format_romanian_date(start, include_time=True)}."
             )
         else:
             message = (
-                f"Inscrierile se deschid joi la 11:59. Fereastra pentru aceasta saptamana incepe pe "
+                f"Înscrierile se deschid joi la 11:59. Fereastra pentru această săptămână începe pe "
                 f"{format_romanian_date(start, include_time=True)}."
             )
     else:
@@ -392,12 +410,12 @@ def signup_window_payload(
         next_start, _ = signup_window_for_week(current_week_key(next_week_time), event_key)
         if event_key == WEDNESDAY_EVENT:
             message = (
-                f"Fereastra curenta s-a inchis miercuri la 19:30. Urmatoarea deschidere este luni pe "
+                f"Fereastra curentă s-a închis miercuri la 19:30. Următoarea deschidere este luni, pe "
                 f"{format_romanian_date(next_start, include_time=True)}."
             )
         else:
             message = (
-                f"Fereastra curenta s-a inchis vineri la 23:59. Urmatoarea deschidere este joi pe "
+                f"Fereastra curentă s-a închis vineri la 23:59. Următoarea deschidere este joi, pe "
                 f"{format_romanian_date(next_start, include_time=True)}."
             )
 
@@ -406,8 +424,10 @@ def signup_window_payload(
         "scheduleOpen": schedule_open,
         "mode": current_mode,
         "message": message,
-        "start": start.strftime("%Y-%m-%d %H:%M:%S"),
-        "end": end.strftime("%Y-%m-%d %H:%M:%S"),
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "nextOpen": next_open.isoformat(),
+        "serverNow": current_time.isoformat(),
         "timezone": "Europe/Bucharest",
         "event": event_key,
     }
@@ -480,30 +500,34 @@ def insert_registrations(
     names: list[str],
     week_key: str,
     event_key: str = FRIDAY_EVENT,
-) -> None:
+) -> list[int]:
     event_key = normalize_event(event_key)
     created_at = datetime.now(APP_TIMEZONE).replace(microsecond=0, tzinfo=None)
+    inserted_ids: list[int] = []
     with get_connection() as connection:
         if using_postgres():
-            connection.executemany(
-                """
-                INSERT INTO registrations (submitted_name, created_at, week_key, event_key)
-                VALUES (%s, %s, %s, %s)
-                """,
-                [(name, created_at, week_key, event_key) for name in names],
-            )
+            for name in names:
+                row = connection.execute(
+                    """
+                    INSERT INTO registrations (submitted_name, created_at, week_key, event_key)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (name, created_at, week_key, event_key),
+                ).fetchone()
+                inserted_ids.append(int(row[0]))
         else:
-            connection.executemany(
-                """
-                INSERT INTO registrations (submitted_name, created_at, week_key, event_key)
-                VALUES (?, ?, ?, ?)
-                """,
-                [
-                    (name, created_at.strftime("%Y-%m-%d %H:%M:%S"), week_key, event_key)
-                    for name in names
-                ],
-            )
+            for name in names:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO registrations (submitted_name, created_at, week_key, event_key)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (name, created_at.strftime("%Y-%m-%d %H:%M:%S"), week_key, event_key),
+                )
+                inserted_ids.append(int(cursor.lastrowid))
             connection.commit()
+    return inserted_ids
 
 
 def update_registration_role(registration_id: int, role: str) -> int:
@@ -829,6 +853,12 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
 
+    def end_headers(self) -> None:
+        cache_control = cache_control_for_path(self.path)
+        if cache_control:
+            self.send_header("Cache-Control", cache_control)
+        super().end_headers()
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/api/registrations":
@@ -899,7 +929,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
         names = sanitize_names(payload)
         if not names:
             self.send_json(
-                {"error": "Completeaza cel putin un nume."},
+                {"error": "Completează cel puțin un nume."},
                 status=HTTPStatus.BAD_REQUEST,
             )
             return
@@ -918,9 +948,10 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             return
 
         week_key = current_week_key()
-        insert_registrations(names, week_key, event_key)
+        submitted_registration_ids = insert_registrations(names, week_key, event_key)
         response = attendance_payload(event_key, week_key)
-        response["message"] = "Inscrierea a fost salvata."
+        response["message"] = "Înscrierea a fost salvată."
+        response["submittedRegistrationIds"] = submitted_registration_ids
         response["signupWindow"] = signup_window
         self.send_json(response, status=HTTPStatus.CREATED)
 
@@ -940,7 +971,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
     def handle_admin_login(self) -> None:
         if not ADMIN_PASSWORD:
             self.send_json(
-                {"error": "Panoul de admin nu este configurat."},
+                {"error": "Panoul de administrare nu este configurat."},
                 status=HTTPStatus.SERVICE_UNAVAILABLE,
             )
             return
@@ -952,7 +983,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
         password = str(payload.get("password", ""))
         if not hmac.compare_digest(password, ADMIN_PASSWORD):
             self.send_json(
-                {"error": "Parola de admin este incorecta."},
+                {"error": "Parola de administrator este incorectă."},
                 status=HTTPStatus.UNAUTHORIZED,
             )
             return
@@ -964,7 +995,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             "Set-Cookie",
             f"admin_session={token}; Path=/; Max-Age={ADMIN_SESSION_HOURS * 3600}; HttpOnly; SameSite=Lax",
         )
-        body = json.dumps({"message": "Autentificare reusita."}).encode("utf-8")
+        body = json.dumps({"message": "Autentificare reușită."}).encode("utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -976,14 +1007,14 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
     ) -> None:
         if not ADMIN_PASSWORD:
             self.send_json(
-                {"error": "Panoul de admin nu este configurat."},
+                {"error": "Panoul de administrare nu este configurat."},
                 status=HTTPStatus.SERVICE_UNAVAILABLE,
             )
             return
 
         if not is_admin_authenticated(self.headers.get("Cookie")):
             self.send_json(
-                {"error": "Autentificare necesara."},
+                {"error": "Autentificare necesară."},
                 status=HTTPStatus.UNAUTHORIZED,
             )
             return
@@ -995,9 +1026,9 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             "deleted": deleted,
             "authenticated": True,
             "message": (
-                f"Au fost sterse {deleted} inscrieri din saptamana curenta."
+                f"Au fost șterse {deleted} înscrieri din săptămâna curentă."
                 if week_key
-                else f"Au fost sterse {deleted} inscrieri din istoricul acestui meci."
+                else f"Au fost șterse {deleted} înscrieri din istoricul acestui meci."
             ),
         })
         self.send_json(response)
@@ -1005,14 +1036,14 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
     def handle_admin_signup_mode(self) -> None:
         if not ADMIN_PASSWORD:
             self.send_json(
-                {"error": "Panoul de admin nu este configurat."},
+                {"error": "Panoul de administrare nu este configurat."},
                 status=HTTPStatus.SERVICE_UNAVAILABLE,
             )
             return
 
         if not is_admin_authenticated(self.headers.get("Cookie")):
             self.send_json(
-                {"error": "Autentificare necesara."},
+                {"error": "Autentificare necesară."},
                 status=HTTPStatus.UNAUTHORIZED,
             )
             return
@@ -1038,7 +1069,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
                 "authenticated": True,
                 "mode": mode,
                 "message": {
-                    "force_closed": "Placeholder-ul a fost activat manual.",
+                    "force_closed": "Formularul a fost închis manual.",
                     "force_open": "Formularul a fost deschis manual.",
                     "auto": "Formularul a revenit la programul automat.",
                 }[mode],
@@ -1049,14 +1080,14 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
     def handle_admin_delete_one(self) -> None:
         if not ADMIN_PASSWORD:
             self.send_json(
-                {"error": "Panoul de admin nu este configurat."},
+                {"error": "Panoul de administrare nu este configurat."},
                 status=HTTPStatus.SERVICE_UNAVAILABLE,
             )
             return
 
         if not is_admin_authenticated(self.headers.get("Cookie")):
             self.send_json(
-                {"error": "Autentificare necesara."},
+                {"error": "Autentificare necesară."},
                 status=HTTPStatus.UNAUTHORIZED,
             )
             return
@@ -1069,7 +1100,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             registration_id = int(payload.get("id", 0))
         except (TypeError, ValueError):
             self.send_json(
-                {"error": "ID invalid pentru inscriere."},
+                {"error": "ID invalid pentru înscriere."},
                 status=HTTPStatus.BAD_REQUEST,
             )
             return
@@ -1078,7 +1109,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
         deleted = delete_registration_by_id(registration_id, event_key)
         if deleted == 0:
             self.send_json(
-                {"error": "Inscrierea nu a fost gasita."},
+                {"error": "Înscrierea nu a fost găsită."},
                 status=HTTPStatus.NOT_FOUND,
             )
             return
@@ -1089,7 +1120,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             {
                 "deleted": deleted,
                 "authenticated": True,
-                "message": "Inscrierea selectata a fost stearsa.",
+                "message": "Înscrierea selectată a fost ștearsă.",
             }
         )
         self.send_json(response)
@@ -1097,14 +1128,14 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
     def handle_admin_update_role(self) -> None:
         if not ADMIN_PASSWORD:
             self.send_json(
-                {"error": "Panoul de admin nu este configurat."},
+                {"error": "Panoul de administrare nu este configurat."},
                 status=HTTPStatus.SERVICE_UNAVAILABLE,
             )
             return
 
         if not is_admin_authenticated(self.headers.get("Cookie")):
             self.send_json(
-                {"error": "Autentificare necesara."},
+                {"error": "Autentificare necesară."},
                 status=HTTPStatus.UNAUTHORIZED,
             )
             return
@@ -1117,7 +1148,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             registration_id = int(payload.get("id", 0))
         except (TypeError, ValueError):
             self.send_json(
-                {"error": "ID invalid pentru inscriere."},
+                {"error": "ID invalid pentru înscriere."},
                 status=HTTPStatus.BAD_REQUEST,
             )
             return
@@ -1126,7 +1157,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
         updated = update_registration_role(registration_id, role)
         if updated == 0:
             self.send_json(
-                {"error": "Inscrierea nu a fost gasita."},
+                {"error": "Înscrierea nu a fost găsită."},
                 status=HTTPStatus.NOT_FOUND,
             )
             return
@@ -1148,14 +1179,14 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
     def handle_admin_generate_teams(self) -> None:
         if not ADMIN_PASSWORD:
             self.send_json(
-                {"error": "Panoul de admin nu este configurat."},
+                {"error": "Panoul de administrare nu este configurat."},
                 status=HTTPStatus.SERVICE_UNAVAILABLE,
             )
             return
 
         if not is_admin_authenticated(self.headers.get("Cookie")):
             self.send_json(
-                {"error": "Autentificare necesara."},
+                {"error": "Autentificare necesară."},
                 status=HTTPStatus.UNAUTHORIZED,
             )
             return
@@ -1165,7 +1196,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
         confirmed_players = [row for row in registrations if row["status"] == "confirmed"]
         if len(confirmed_players) < TEAM_COUNT:
             self.send_json(
-                {"error": "Ai nevoie de cel putin 3 jucatori confirmati pentru a genera echipe."},
+                {"error": "Ai nevoie de cel puțin 3 jucători confirmați pentru a genera echipe."},
                 status=HTTPStatus.BAD_REQUEST,
             )
             return
@@ -1187,14 +1218,14 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
     def handle_admin_reset_teams(self) -> None:
         if not ADMIN_PASSWORD:
             self.send_json(
-                {"error": "Panoul de admin nu este configurat."},
+                {"error": "Panoul de administrare nu este configurat."},
                 status=HTTPStatus.SERVICE_UNAVAILABLE,
             )
             return
 
         if not is_admin_authenticated(self.headers.get("Cookie")):
             self.send_json(
-                {"error": "Autentificare necesara."},
+                {"error": "Autentificare necesară."},
                 status=HTTPStatus.UNAUTHORIZED,
             )
             return

@@ -217,6 +217,10 @@ function buildAppDocument() {
   makeElement(document, "div", "submission-overlay");
   makeElement(document, "p", "form-message");
   makeElement(document, "p", "signup-window-message", ["hidden"]);
+  makeElement(document, "section", "countdown-card", ["hidden"]);
+  makeElement(document, "span", "countdown-label");
+  makeElement(document, "strong", "countdown-display");
+  makeElement(document, "span", "connection-status", ["hidden"]);
   makeElement(document, "div", "form-controls-shell");
   makeElement(document, "div", "form-locked-overlay", ["hidden"]);
   makeElement(document, "tbody", "attendance-table-body");
@@ -227,6 +231,8 @@ function buildAppDocument() {
   makeElement(document, "p", "page-description");
   makeElement(document, "p", "schedule-callout");
   makeElement(document, "span", "match-date-subtitle");
+  makeElement(document, "a", "match-location-link");
+  makeElement(document, "span", "match-location-name");
   makeElement(document, "span", "locked-schedule-copy");
   makeElement(document, "a", "friday-event-link");
   makeElement(document, "a", "wednesday-event-link");
@@ -243,9 +249,12 @@ function buildAppDocument() {
   makeElement(document, "strong", "waiting-counter");
   makeElement(document, "strong", "progress-caption");
   makeElement(document, "div", "progress-fill");
+  makeElement(document, "div", "progress-track");
+  makeElement(document, "div", "content-grid");
   const successPanel = makeElement(document, "div", "success-panel", ["hidden"]);
-  successPanel.appendChild(new FakeElement("strong", document));
-  successPanel.appendChild(new FakeElement("span", document));
+  makeElement(document, "strong", "success-title");
+  makeElement(document, "span", "success-summary");
+  makeElement(document, "ul", "success-details");
   makeElement(document, "section", "admin-panel", ["hidden"]);
   makeElement(document, "form", "admin-login-form");
   makeElement(document, "input", "admin-password");
@@ -315,6 +324,9 @@ function createFetchMock(responses, requests) {
     const next = responses.shift();
     if (!next) {
       throw new Error(`Unexpected fetch for ${url}`);
+    }
+    if (next.error) {
+      throw next.error;
     }
     const body = next.body ?? {};
     return {

@@ -142,6 +142,7 @@ body.app-booting #page-title,
 body.app-booting #page-description,
 body.app-booting #schedule-callout,
 body.app-booting #match-date-subtitle,
+body.app-booting #match-location-link,
 body.app-booting .event-nav,
 body.app-booting #signup-state-title,
 body.app-booting #signup-state-badge,
@@ -321,6 +322,44 @@ body.app-booting .form-controls-shell {
 .match-date-card strong {
   font-size: clamp(1.35rem, 1.75vw, 1.85rem);
   line-height: 1.02;
+}
+
+.match-location-link {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: var(--surface-tint-text);
+  background: var(--surface-tint);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-decoration: none;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.match-location-link:hover {
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.match-location-link:focus-visible {
+  outline: 3px solid rgba(47, 102, 232, 0.28);
+  outline-offset: 2px;
+}
+
+.location-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  fill: currentColor;
 }
 
 .top-controls {
@@ -1606,7 +1645,8 @@ tr.waiting .status-badge {
     grid-template-columns: auto 1fr;
     grid-template-areas:
       "label value"
-      "sub value";
+      "sub value"
+      "location location";
     align-items: center;
     gap: 2px 10px;
     padding: 12px 14px;
@@ -1630,6 +1670,13 @@ tr.waiting .status-badge {
   .match-date-subtitle {
     grid-area: sub;
     font-size: 0.78rem;
+  }
+
+  .match-location-link {
+    grid-area: location;
+    margin-top: 6px;
+    padding: 5px 8px;
+    font-size: 0.7rem;
   }
 
   .schedule-callout {

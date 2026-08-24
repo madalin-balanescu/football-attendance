@@ -10,7 +10,13 @@ Weekly football attendance app with separate Friday and Wednesday signup lists, 
 
 - public weekly signup form with up to 2 names per submission
 - separate public lists and automatic match dates for Friday and Wednesday
+- event-specific venue links that open the correct destination in Google Maps
 - distinct blue Friday and green pitch-inspired Wednesday visual themes
+- live countdown to the next opening or current closing time
+- adaptive layout that prioritizes signup while open and the roster while closed
+- detailed confirmation showing each submitted player's position and status
+- installable PWA shell with offline UI and last-known-list fallback
+- keyboard, reduced-motion, forced-color, and screen-reader accessibility support
 - first 18 players marked as confirmed
 - extra players placed on the waiting list
 - admin login protected by `ADMIN_PASSWORD`
@@ -88,7 +94,7 @@ Team-builder page admin actions:
 - assign a role for each confirmed player:
   - `Atac`
   - `Mijloc`
-  - `Aparare`
+  - `Apărare`
   - `Oriunde`
 - generate 3 balanced teams
 - reset generated teams
@@ -163,8 +169,13 @@ Frontend coverage includes:
 
 - initial dashboard rendering
 - signup form behavior
+- detailed multi-player success feedback
+- authoritative countdown rendering
+- offline cached-list fallback
 - Wednesday route copy and event-aware requests
 - locked state behavior
+- accessibility and responsive UI contracts
+- manifest and service-worker app-shell validation
 - team-builder rendering
 - team generation refresh behavior
 
@@ -191,7 +202,11 @@ node --check static/teams.js
 - [static/teams.html](static/teams.html) - dedicated team-builder page
 - [static/teams.js](static/teams.js) - team-builder interactions
 - [static/styles.css](static/styles.css) - shared styling
+- [static/ui-enhancements.css](static/ui-enhancements.css) - adaptive layout, accessibility, and interaction styling
+- [static/manifest.webmanifest](static/manifest.webmanifest) - installable app metadata
+- [static/service-worker.js](static/service-worker.js) - offline app-shell caching
 - [tests/test_server.py](tests/test_server.py) - backend integration tests
+- [tests/test_ui_contract.py](tests/test_ui_contract.py) - static accessibility, responsive, and PWA contracts
 - [tests/test_frontend.js](tests/test_frontend.js) - frontend script tests
 - [tests/frontend_harness.js](tests/frontend_harness.js) - fake DOM test harness
 - [render.yaml](render.yaml) - Render deployment config

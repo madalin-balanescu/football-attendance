@@ -1,0 +1,37 @@
+{
+  "name": "Prezență la fotbal",
+  "short_name": "Fotbal",
+  "description": "Înscrieri săptămânale pentru meciurile de fotbal.",
+  "lang": "ro",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#edf2ff",
+  "theme_color": "#2f66e8",
+  "icons": [
+    {
+      "src": "/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Fotbal vineri",
+      "short_name": "Vineri",
+      "url": "/"
+    },
+    {
+      "name": "Fotbal miercuri",
+      "short_name": "Miercuri",
+      "url": "/miercuri"
+    }
+  ]
+}

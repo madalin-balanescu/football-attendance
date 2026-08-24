@@ -6,6 +6,10 @@ const submitButtonLabel = submitButton.querySelector(".button-label");
 const submissionOverlay = document.getElementById("submission-overlay");
 const formMessage = document.getElementById("form-message");
 const signupWindowMessage = document.getElementById("signup-window-message");
+const countdownCard = document.getElementById("countdown-card");
+const countdownLabel = document.getElementById("countdown-label");
+const countdownDisplay = document.getElementById("countdown-display");
+const connectionStatus = document.getElementById("connection-status");
 const formControlsShell = document.querySelector(".form-controls-shell");
 const formLockedOverlay = document.getElementById("form-locked-overlay");
 const tableBody = document.getElementById("attendance-table-body");
@@ -16,6 +20,8 @@ const pageTitle = document.getElementById("page-title");
 const pageDescription = document.getElementById("page-description");
 const scheduleCallout = document.getElementById("schedule-callout");
 const matchDateSubtitle = document.getElementById("match-date-subtitle");
+const matchLocationLink = document.getElementById("match-location-link");
+const matchLocationName = document.getElementById("match-location-name");
 const lockedScheduleCopy = document.getElementById("locked-schedule-copy");
 const fridayEventLink = document.getElementById("friday-event-link");
 const wednesdayEventLink = document.getElementById("wednesday-event-link");
@@ -28,7 +34,12 @@ const spotsLeftCounter = document.getElementById("spots-left-counter");
 const waitingCounter = document.getElementById("waiting-counter");
 const progressCaption = document.getElementById("progress-caption");
 const progressFill = document.getElementById("progress-fill");
+const progressTrack = document.getElementById("progress-track");
+const contentGrid = document.getElementById("content-grid");
 const successPanel = document.getElementById("success-panel");
+const successTitle = document.getElementById("success-title");
+const successSummary = document.getElementById("success-summary");
+const successDetails = document.getElementById("success-details");
 const adminPanel = document.getElementById("admin-panel");
 const adminLoginForm = document.getElementById("admin-login-form");
 const adminPasswordInput = document.getElementById("admin-password");
@@ -55,24 +66,30 @@ const eventKey = ["/miercuri", "/wednesday"].includes(currentPath)
   : "friday";
 const EVENT_CONTENT = {
   friday: {
-    documentTitle: "Prezenta saptamanala la fotbal",
-    kicker: "Meciul acestei saptamani",
-    title: "Prezenta saptamanala la fotbal",
+    documentTitle: "Prezență săptămânală la fotbal",
+    kicker: "Meciul acestei săptămâni",
+    title: "Prezență săptămânală la fotbal",
     description:
-      "Completeaza formularul pentru a te inscrie la meciul din saptamana aceasta. Poti trimite maximum 2 persoane intr-o singura inscriere.",
-    schedule: "Inscrierile incep in fiecare joi la ora 12:00.",
+      "Completează formularul pentru a te înscrie la meciul din săptămâna aceasta. Poți trimite maximum 2 persoane într-o singură înscriere.",
+    schedule: "Înscrierile încep în fiecare joi la ora 12:00.",
     dateSubtitle: "Fotbal de vineri seara",
-    lockedSchedule: "Formularul devine activ doar joia incepand cu orele 12:00.",
+    locationName: "Magic Stadium - Tudor",
+    locationUrl:
+      "https://www.google.com/maps/place/Magic+Stadium/@47.1574832,27.6050335,200m/data=!3m1!1e3!4m14!1m7!3m6!1s0x40cafbf72d089343:0xf8aa78e9b6dbaecf!2sMagic+Sport+Center+Alexandru!8m2!3d47.1669271!4d27.56082!16s%2Fg%2F11h3gp53y_!3m5!1s0x40cafb0053daf0a3:0xa928221648be6a61!8m2!3d47.1575625!4d27.6050018!16s%2Fg%2F11z6p7z834?entry=ttu&g_ep=EgoyMDI2MDgxOS4wIKXMDSoASAFQAw%3D%3D",
+    lockedSchedule: "Formularul devine activ doar joia începând cu ora 12:00.",
   },
   wednesday: {
-    documentTitle: "Prezenta la fotbal miercuri",
+    documentTitle: "Prezență la fotbal miercuri",
     kicker: "Meciul de miercuri",
-    title: "Prezenta la fotbal - Miercuri",
+    title: "Prezență la fotbal - Miercuri",
     description:
-      "Completeaza formularul pentru a te inscrie la meciul de miercuri, programat intre orele 19:30 si 21:30. Poti trimite maximum 2 persoane intr-o singura inscriere.",
-    schedule: "Inscrierile incep in fiecare luni la ora 19:30.",
+      "Completează formularul pentru a te înscrie la meciul de miercuri, programat între orele 19:30 și 21:30. Poți trimite maximum 2 persoane într-o singură înscriere.",
+    schedule: "Înscrierile încep în fiecare luni la ora 19:30.",
     dateSubtitle: "Miercuri, 19:30 - 21:30",
-    lockedSchedule: "Formularul devine activ in fiecare luni incepand cu ora 19:30.",
+    locationName: "D&C Sport - Siraj",
+    locationUrl:
+      "https://www.google.com/maps/place/D%26C+Sport/@47.1354308,27.5888104,1044m/data=!3m2!1e3!4b1!4m6!3m5!1s0x40cafbb674767261:0x8b87d3b9d1de308f!8m2!3d47.1354272!4d27.5913907!16s%2Fg%2F11c6w058tj?entry=ttu&g_ep=EgoyMDI2MDgxOS4wIKXMDSoASAFQAw%3D%3D",
+    lockedSchedule: "Formularul devine activ în fiecare luni începând cu ora 19:30.",
   },
 };
 let isAdminAuthenticated = false;
@@ -82,6 +99,12 @@ let isSignupWindowOpen = true;
 let currentSignupMode = "auto";
 let isScheduleOpen = true;
 let lastSeenRegistrationId = null;
+let countdownTimerId = null;
+let countdownTarget = null;
+let countdownClockOffset = 0;
+let countdownRefreshPending = false;
+
+const DASHBOARD_CACHE_KEY = `football-attendance:${eventKey}`;
 
 function eventApiUrl(path) {
   return `${path}?event=${eventKey}`;
@@ -97,6 +120,12 @@ function applyEventContent() {
   pageDescription.textContent = content.description;
   scheduleCallout.textContent = content.schedule;
   matchDateSubtitle.textContent = content.dateSubtitle;
+  matchLocationName.textContent = content.locationName;
+  matchLocationLink.setAttribute("href", content.locationUrl);
+  matchLocationLink.setAttribute(
+    "aria-label",
+    `Deschide traseul către ${content.locationName} în Google Maps`,
+  );
   lockedScheduleCopy.textContent = content.lockedSchedule;
   fridayEventLink.setAttribute("aria-current", eventKey === "friday" ? "page" : "false");
   wednesdayEventLink.setAttribute("aria-current", eventKey === "wednesday" ? "page" : "false");
@@ -105,6 +134,127 @@ function applyEventContent() {
 
 function setAppReady(isReady) {
   document.body.classList.toggle("app-booting", !isReady);
+}
+
+function setConnectionStatus(isOnline, isUsingCache = false) {
+  document.body.classList.toggle("is-offline", !isOnline);
+  connectionStatus.classList.toggle("hidden", isOnline);
+  connectionStatus.textContent = isUsingCache ? "Date salvate local" : "Fără conexiune";
+  if (!isOnline) {
+    setFormLocked(true);
+    setSubmissionLoading(false);
+  }
+}
+
+function cacheDashboardPayload(payload) {
+  try {
+    localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // The live API remains the source of truth when browser storage is unavailable.
+  }
+}
+
+function readCachedDashboardPayload() {
+  try {
+    const cachedPayload = localStorage.getItem(DASHBOARD_CACHE_KEY);
+    return cachedPayload ? JSON.parse(cachedPayload) : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatCountdown(milliseconds) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const clock = [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
+  return days > 0 ? `${days} ${days === 1 ? "zi" : "zile"} · ${clock}` : clock;
+}
+
+function stopCountdown() {
+  if (countdownTimerId !== null && typeof window.clearInterval === "function") {
+    window.clearInterval(countdownTimerId);
+  }
+  countdownTimerId = null;
+  countdownTarget = null;
+  countdownCard.classList.add("hidden");
+}
+
+function renderCountdown() {
+  if (!countdownTarget) {
+    return;
+  }
+
+  const remaining = countdownTarget - (Date.now() + countdownClockOffset);
+  countdownDisplay.textContent = remaining > 0 ? formatCountdown(remaining) : "Se actualizează...";
+
+  if (remaining <= 0) {
+    stopCountdown();
+    if (!countdownRefreshPending) {
+      countdownRefreshPending = true;
+      const refreshTimer = window.setTimeout(() => {
+        loadRegistrations()
+          .catch(() => {})
+          .finally(() => {
+            countdownRefreshPending = false;
+          });
+      }, 1500);
+      refreshTimer?.unref?.();
+    }
+  }
+}
+
+function configureCountdown(signupWindow) {
+  stopCountdown();
+  if (!signupWindow || signupWindow.mode !== "auto") {
+    return;
+  }
+
+  const targetValue = signupWindow.isOpen ? signupWindow.end : signupWindow.nextOpen;
+  const target = Date.parse(String(targetValue || ""));
+  const serverNow = Date.parse(String(signupWindow.serverNow || ""));
+  if (!Number.isFinite(target)) {
+    return;
+  }
+
+  countdownClockOffset = Number.isFinite(serverNow) ? serverNow - Date.now() : 0;
+  countdownTarget = target;
+  countdownLabel.textContent = signupWindow.isOpen
+    ? "Înscrierile se închid în"
+    : "Următoarea deschidere";
+  countdownCard.classList.remove("hidden");
+  renderCountdown();
+
+  if (typeof window.setInterval === "function") {
+    countdownTimerId = window.setInterval(renderCountdown, 1000);
+  }
+}
+
+function registerServiceWorker() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return;
+  }
+
+  navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+}
+
+function bindConnectivityEvents() {
+  if (typeof navigator === "undefined") {
+    return;
+  }
+
+  setConnectionStatus(navigator.onLine !== false);
+  if (typeof window.addEventListener !== "function") {
+    return;
+  }
+
+  window.addEventListener("offline", () => setConnectionStatus(false));
+  window.addEventListener("online", () => {
+    setConnectionStatus(true);
+    loadRegistrations().catch(() => setConnectionStatus(false, true));
+  });
 }
 
 function formatRegistrationTime(value) {
@@ -121,20 +271,31 @@ function applyTheme(theme) {
   currentTheme = theme;
   document.documentElement.dataset.theme = theme;
   localStorage.setItem("theme", theme);
-  themeToggleLabel.textContent = theme === "dark" ? "Mod luminos" : "Mod intunecat";
+  themeToggleLabel.textContent = theme === "dark" ? "Mod luminos" : "Mod întunecat";
   themeIconSun.classList.toggle("hidden", theme !== "dark");
   themeIconMoon.classList.toggle("hidden", theme === "dark");
 }
 
 function setSubmissionLoading(isLoading) {
-  submitButton.disabled = isLoading;
-  submitButtonLabel.textContent = isLoading ? "Se trimite..." : "Trimite inscrierea";
+  const cannotSubmit = !isSignupWindowOpen || document.body.classList.contains("is-offline");
+  submitButton.disabled = isLoading || cannotSubmit;
+  if (isLoading) {
+    submitButtonLabel.textContent = "Se trimite...";
+  } else if (!isSignupWindowOpen) {
+    submitButtonLabel.textContent = "Înscrierile sunt închise";
+  } else if (document.body.classList.contains("is-offline")) {
+    submitButtonLabel.textContent = "Necesită conexiune";
+  } else {
+    submitButtonLabel.textContent = "Trimite înscrierea";
+  }
   submissionOverlay.classList.toggle("hidden", !isLoading);
+  submissionOverlay.setAttribute("aria-hidden", String(!isLoading));
 }
 
 function setFormLocked(isLocked) {
   formControlsShell.classList.toggle("is-locked", isLocked);
   formLockedOverlay.classList.toggle("hidden", !isLocked);
+  formLockedOverlay.setAttribute("aria-hidden", String(!isLocked));
   person1Input.disabled = isLocked;
   person2Input.disabled = isLocked;
 }
@@ -144,7 +305,7 @@ async function parseJsonResponse(response) {
   try {
     return text ? JSON.parse(text) : {};
   } catch {
-    throw new Error("Serverul a trimis un raspuns invalid. Reincarca pagina.");
+    throw new Error("Serverul a trimis un răspuns invalid. Reîncarcă pagina.");
   }
 }
 
@@ -183,9 +344,10 @@ function updateLiveBoard(registrations = []) {
   waitingCounter.textContent = `${waiting}`;
   progressCaption.textContent = `${confirmed} din 18 locuri confirmate`;
   progressFill.style.width = `${progressPercent}%`;
+  progressTrack.setAttribute("aria-valuenow", String(confirmed));
 
-  let title = "Inchis";
-  let badge = "Inchis";
+  let title = "Închis";
+  let badge = "Închis";
 
   if (confirmed >= 18) {
     title = "Plin";
@@ -199,22 +361,47 @@ function updateLiveBoard(registrations = []) {
       badge = "Deschis";
     }
   } else if (waiting > 0) {
-    title = "Lista de asteptare";
-    badge = "Asteptare";
+    title = "Lista de așteptare";
+    badge = "Așteptare";
   }
 
   signupStateTitle.textContent = title;
   signupStateBadge.textContent = badge;
 }
 
-function flashSuccessPanel(message) {
+function flashSuccessPanel(payload) {
+  const submittedIds = new Set(payload.submittedRegistrationIds || []);
+  const registrations = Array.isArray(payload.registrations) ? payload.registrations : [];
+  const submitted = registrations.filter((registration) => submittedIds.has(registration.id));
+  const confirmed = Math.min(registrations.length, 18);
+  const spotsLeft = Math.max(18 - confirmed, 0);
+
+  successTitle.textContent = submitted.length > 1 ? "Locuri înregistrate" : "Loc înregistrat";
+  successSummary.textContent = spotsLeft > 0
+    ? `Mai sunt ${spotsLeft} ${spotsLeft === 1 ? "loc confirmat disponibil" : "locuri confirmate disponibile"}.`
+    : "Primele 18 locuri sunt ocupate; înscrierile noi intră pe lista de așteptare.";
+  successDetails.innerHTML = "";
+
+  submitted.forEach((registration) => {
+    const detail = document.createElement("li");
+    const status = registration.status === "confirmed" ? "Confirmat" : "Lista de așteptare";
+    detail.textContent = `${registration.name}: poziția ${registration.position} · ${status}`;
+    successDetails.appendChild(detail);
+  });
+
+  if (!submitted.length) {
+    const detail = document.createElement("li");
+    detail.textContent = "Înscrierea apare acum în lista curentă.";
+    successDetails.appendChild(detail);
+  }
+
   successPanel.classList.remove("hidden");
-  const detail = successPanel.querySelector("span");
-  detail.textContent = message;
+  successPanel.focus?.({ preventScroll: true });
   window.clearTimeout(flashSuccessPanel.timeoutId);
   flashSuccessPanel.timeoutId = window.setTimeout(() => {
     successPanel.classList.add("hidden");
-  }, 3200);
+  }, 6500);
+  flashSuccessPanel.timeoutId?.unref?.();
 }
 
 function updateSignupWindowState(signupWindow) {
@@ -232,17 +419,20 @@ function updateSignupWindowState(signupWindow) {
   signupWindowMessage.classList.toggle("hidden", !message);
   signupWindowMessage.classList.toggle("is-open", isSignupWindowOpen);
   signupWindowMessage.classList.toggle("is-closed", !isSignupWindowOpen);
+  contentGrid.classList.toggle("is-closed", !isSignupWindowOpen);
+  document.body.classList.toggle("signup-is-closed", !isSignupWindowOpen);
   setFormLocked(!isSignupWindowOpen);
+  configureCountdown(signupWindow);
   updateSignupModeButtons();
 
   if (!isSignupWindowOpen) {
     submitButton.disabled = true;
-    submitButtonLabel.textContent = "Inscrierile sunt inchise";
+    submitButtonLabel.textContent = "Înscrierile sunt închise";
     return;
   }
 
   submitButton.disabled = false;
-  submitButtonLabel.textContent = "Trimite inscrierea";
+  submitButtonLabel.textContent = "Trimite înscrierea";
 }
 
 function renderRows(registrations) {
@@ -269,25 +459,38 @@ function renderRows(registrations) {
     }
 
     const positionCell = document.createElement("td");
-    positionCell.dataset.label = "Pozitie";
+    positionCell.dataset.label = "Poziție";
     positionCell.textContent = registration.position;
 
     const createdAtCell = document.createElement("td");
     createdAtCell.className = "time-cell";
     createdAtCell.dataset.label = "Ora";
-    createdAtCell.textContent = formatRegistrationTime(registration.createdAt);
+    const formattedTime = formatRegistrationTime(registration.createdAt);
+    const [datePart, clockPart] = formattedTime.split(" ");
+    createdAtCell.setAttribute("aria-label", formattedTime);
+
+    const dateText = document.createElement("span");
+    dateText.className = "time-date";
+    dateText.textContent = datePart;
+
+    const clockText = document.createElement("span");
+    clockText.className = "time-clock";
+    clockText.textContent = clockPart || "";
+
+    createdAtCell.append(dateText, clockText);
 
     const nameCell = document.createElement("td");
     nameCell.className = "name-cell";
     nameCell.dataset.label = "Nume";
     nameCell.textContent = registration.name;
+    nameCell.setAttribute("title", registration.name);
 
     const statusCell = document.createElement("td");
     statusCell.className = "status-cell";
     statusCell.dataset.label = "Status";
     const badge = document.createElement("span");
     badge.className = "status-badge";
-    badge.textContent = registration.status === "confirmed" ? "Confirmat" : "Asteptare";
+    badge.textContent = registration.status === "confirmed" ? "Confirmat" : "Așteptare";
     statusCell.appendChild(badge);
 
     row.append(positionCell, createdAtCell, nameCell, statusCell);
@@ -300,7 +503,7 @@ function renderRows(registrations) {
       const deleteButton = document.createElement("button");
       deleteButton.type = "button";
       deleteButton.className = "danger-button table-delete-button";
-      deleteButton.textContent = "Sterge";
+      deleteButton.textContent = "Șterge";
       deleteButton.addEventListener("click", () => deleteOneRegistration(registration.id, deleteButton));
 
       actionCell.appendChild(deleteButton);
@@ -312,13 +515,32 @@ function renderRows(registrations) {
 }
 
 async function loadRegistrations() {
-  const response = await fetch(eventApiUrl("/api/registrations"));
-  if (!response.ok) {
-    throw new Error("Nu am putut incarca lista curenta.");
-  }
+  try {
+    const response = await fetch(eventApiUrl("/api/registrations"));
+    if (!response.ok) {
+      throw new Error("Nu am putut încărca lista curentă.");
+    }
 
-  const payload = await parseJsonResponse(response);
-  syncDashboardPayload(payload);
+    const payload = await parseJsonResponse(response);
+    syncDashboardPayload(payload);
+    cacheDashboardPayload(payload);
+    setConnectionStatus(true);
+    return payload;
+  } catch (error) {
+    const cachedPayload = readCachedDashboardPayload();
+    if (!cachedPayload) {
+      setConnectionStatus(false);
+      throw error;
+    }
+
+    syncDashboardPayload(cachedPayload);
+    setConnectionStatus(false, true);
+    setFormLocked(true);
+    submitButton.disabled = true;
+    submitButtonLabel.textContent = "Necesită conexiune";
+    formMessage.textContent = "Afișăm ultima listă salvată pe acest dispozitiv.";
+    return cachedPayload;
+  }
 }
 
 function setAdminAuthenticated(authenticated) {
@@ -381,13 +603,14 @@ async function submitRegistration(event) {
     const payload = await parseJsonResponse(response);
     if (!response.ok) {
       updateSignupWindowState(payload.signupWindow);
-      throw new Error(payload.error || "Inscrierea nu a putut fi salvata.");
+      throw new Error(payload.error || "Înscrierea nu a putut fi salvată.");
     }
 
     form.reset();
     syncDashboardPayload(payload);
+    cacheDashboardPayload(payload);
     formMessage.textContent = payload.message;
-    flashSuccessPanel("Inscrierea este deja in tabel si a fost marcata in ordinea sosirii.");
+    flashSuccessPanel(payload);
   } catch (error) {
     formMessage.textContent = error.message;
   } finally {
@@ -399,7 +622,7 @@ async function loginAdmin(event) {
   event.preventDefault();
   adminMessage.textContent = "";
   adminLoginButton.disabled = true;
-  adminLoginButton.textContent = "Se verifica...";
+  adminLoginButton.textContent = "Se verifică...";
 
   try {
     const response = await fetch("/api/admin/login", {
@@ -415,7 +638,7 @@ async function loginAdmin(event) {
 
     const payload = await parseJsonResponse(response);
     if (!response.ok) {
-      throw new Error(payload.error || "Autentificarea a esuat.");
+      throw new Error(payload.error || "Autentificarea a eșuat.");
     }
 
     setAdminAuthenticated(true);
@@ -425,7 +648,7 @@ async function loginAdmin(event) {
     adminMessage.textContent = error.message;
   } finally {
     adminLoginButton.disabled = false;
-    adminLoginButton.textContent = "Intra in panoul admin";
+    adminLoginButton.textContent = "Intră în panoul de administrare";
   }
 }
 
@@ -444,7 +667,7 @@ async function clearRegistrations(endpoint, triggerButton) {
       if (response.status === 401) {
         setAdminAuthenticated(false);
       }
-      throw new Error(payload.error || "Actiunea nu a putut fi finalizata.");
+      throw new Error(payload.error || "Acțiunea nu a putut fi finalizată.");
     }
 
     syncDashboardPayload(payload);
@@ -475,7 +698,7 @@ async function setSignupMode(mode) {
       if (response.status === 401) {
         setAdminAuthenticated(false);
       }
-      throw new Error(payload.error || "Setarea placeholder-ului nu a putut fi schimbata.");
+      throw new Error(payload.error || "Starea formularului nu a putut fi schimbată.");
     }
 
     syncDashboardPayload(payload);
@@ -506,7 +729,7 @@ async function deleteOneRegistration(registrationId, triggerButton) {
       if (response.status === 401) {
         setAdminAuthenticated(false);
       }
-      throw new Error(payload.error || "Inscrierea nu a putut fi stearsa.");
+      throw new Error(payload.error || "Înscrierea nu a putut fi ștearsă.");
     }
 
     syncDashboardPayload(payload);
@@ -524,7 +747,7 @@ async function logoutAdmin() {
     credentials: "same-origin",
   });
   setAdminAuthenticated(false);
-  adminMessage.textContent = "Te-ai delogat din panoul de admin.";
+  adminMessage.textContent = "Te-ai delogat din panoul de administrare.";
 }
 
 function toggleTheme() {
@@ -550,6 +773,8 @@ applyEventContent();
 applyTheme(currentTheme);
 setAdminExpanded(false);
 setAppReady(false);
+bindConnectivityEvents();
+registerServiceWorker();
 
 Promise.allSettled([loadAdminStatus(), loadRegistrations()]).then((results) => {
   const registrationResult = results[1];
