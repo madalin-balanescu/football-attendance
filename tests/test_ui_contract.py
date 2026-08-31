@@ -54,20 +54,29 @@ class FrontendContractTestCase(unittest.TestCase):
     def test_manifest_and_service_worker_cover_the_app_shell(self) -> None:
         manifest = json.loads((STATIC_DIR / "manifest.webmanifest").read_text(encoding="utf-8"))
         worker = (STATIC_DIR / "service-worker.js").read_text(encoding="utf-8")
+        attendance_page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
         self.assertEqual(manifest["lang"], "ro")
         self.assertEqual(manifest["display"], "standalone")
         self.assertTrue(manifest["icons"])
         self.assertIn('url.pathname.startsWith("/api/")', worker)
+        self.assertIn('cache: "reload"', worker)
+        self.assertIn('cache: "no-store"', worker)
+        app_script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+        self.assertIn("navigator.serviceWorker.controller", app_script)
+        self.assertIn('addEventListener("controllerchange"', app_script)
+        self.assertIn('/styles.css?v=20260831-1', attendance_page)
+        self.assertIn('/app.js?v=20260831-1', attendance_page)
 
         shell_match = re.search(r"const APP_SHELL = \[(.*?)\];", worker, re.DOTALL)
         self.assertIsNotNone(shell_match)
-        shell_paths = re.findall(r'"(/[^"]+)"', shell_match.group(1))
+        shell_paths = re.findall(r'["`](/[^"`]+)["`]', shell_match.group(1))
         for asset_path in shell_paths:
             if asset_path in {"/", "/miercuri", "/echipe"}:
                 continue
             with self.subTest(asset=asset_path):
-                self.assertTrue((STATIC_DIR / asset_path.lstrip("/")).exists())
+                asset_filename = asset_path.split("?", 1)[0].lstrip("/")
+                self.assertTrue((STATIC_DIR / asset_filename).exists())
 
         expected_icon_sizes = {
             "app-icon-192.png": (192, 192),

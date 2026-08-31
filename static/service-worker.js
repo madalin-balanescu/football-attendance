@@ -1,29 +1,42 @@
-const CACHE_NAME = "football-attendance-v4";
+const CACHE_PREFIX = "football-attendance-";
+const CACHE_NAME = `${CACHE_PREFIX}v5`;
+const ASSET_VERSION = "20260831-1";
 const APP_SHELL = [
   "/",
   "/miercuri",
   "/echipe",
-  "/styles.css",
-  "/ui-enhancements.css",
-  "/app.js",
-  "/teams.js",
-  "/manifest.webmanifest",
-  "/app-icon.svg",
-  "/app-icon-192.png",
-  "/app-icon-512.png",
+  `/styles.css?v=${ASSET_VERSION}`,
+  `/ui-enhancements.css?v=${ASSET_VERSION}`,
+  `/app.js?v=${ASSET_VERSION}`,
+  `/teams.js?v=${ASSET_VERSION}`,
+  `/manifest.webmanifest?v=${ASSET_VERSION}`,
+  `/app-icon.svg?v=${ASSET_VERSION}`,
+  `/app-icon-192.png?v=${ASSET_VERSION}`,
+  `/app-icon-512.png?v=${ASSET_VERSION}`,
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
-  self.skipWaiting();
+  event.waitUntil(
+    caches
+      .open(CACHE_NAME)
+      .then((cache) =>
+        cache.addAll(APP_SHELL.map((path) => new Request(path, { cache: "reload" }))),
+      )
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim()),
+      .then(async (keys) => {
+        const oldAppCaches = keys.filter(
+          (key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME,
+        );
+        await Promise.all(oldAppCaches.map((key) => caches.delete(key)));
+        await self.clients.claim();
+      }),
   );
 });
 
@@ -37,10 +50,12 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
+      fetch(new Request(request, { cache: "no-store" }))
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
           return response;
         })
         .catch(async () => {
@@ -52,18 +67,15 @@ self.addEventListener("fetch", (event) => {
 
   if (url.origin === self.location.origin) {
     event.respondWith(
-      caches.match(request).then((cached) => {
-        const refreshed = fetch(request)
-          .then((response) => {
-            if (response.ok) {
-              const copy = response.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-            }
-            return response;
-          })
-          .catch(() => cached || Response.error());
-        return cached || refreshed;
-      }),
+      fetch(new Request(request, { cache: "no-store" }))
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(async () => (await caches.match(request)) || Response.error()),
     );
   }
 });

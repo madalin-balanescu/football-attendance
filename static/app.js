@@ -237,7 +237,21 @@ function registerServiceWorker() {
     return;
   }
 
-  navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+  if (navigator.serviceWorker.controller) {
+    let isRefreshingForUpdate = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (isRefreshingForUpdate) {
+        return;
+      }
+      isRefreshingForUpdate = true;
+      window.location.reload();
+    });
+  }
+
+  navigator.serviceWorker
+    .register("/service-worker.js", { updateViaCache: "none" })
+    .then((registration) => registration.update())
+    .catch(() => {});
 }
 
 function bindConnectivityEvents() {

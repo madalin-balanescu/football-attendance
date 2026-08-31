@@ -69,10 +69,12 @@ def cache_control_for_path(raw_path: str) -> str | None:
     path = urlparse(raw_path).path
     if path.startswith("/api/"):
         return "no-store"
-    if path == "/service-worker.js" or path.endswith(".html"):
-        return "no-cache"
+    if path == "/service-worker.js":
+        return "no-cache, no-store, must-revalidate"
+    if path.endswith(".html"):
+        return "no-cache, must-revalidate"
     if Path(path).suffix in STATIC_CACHE_SUFFIXES:
-        return "public, max-age=86400"
+        return "no-cache, must-revalidate"
     return None
 
 

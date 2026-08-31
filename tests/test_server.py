@@ -137,12 +137,15 @@ class AttendanceServerTestCase(unittest.TestCase):
             "06 Mai 2026 19:30",
         )
 
-    def test_cache_policy_keeps_api_live_and_static_assets_fast(self) -> None:
+    def test_cache_policy_prevents_mixed_frontend_releases(self) -> None:
         self.assertEqual(server.cache_control_for_path("/api/registrations?event=friday"), "no-store")
-        self.assertEqual(server.cache_control_for_path("/service-worker.js"), "no-cache")
+        self.assertEqual(
+            server.cache_control_for_path("/service-worker.js"),
+            "no-cache, no-store, must-revalidate",
+        )
         self.assertEqual(
             server.cache_control_for_path("/ui-enhancements.css"),
-            "public, max-age=86400",
+            "no-cache, must-revalidate",
         )
         self.assertIsNone(server.cache_control_for_path("/"))
 
