@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import hmac
+import ipaddress
+import math
 import os
 import random
 import sqlite3
@@ -31,9 +33,14 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+RATE_LIMIT_SECRET = os.environ.get("RATE_LIMIT_SECRET") or ADMIN_PASSWORD
 MAX_NAMES_PER_SUBMISSION = 2
 GREEN_LIMIT = 18
 ADMIN_SESSION_HOURS = 12
+REGISTRATION_SHORT_LIMIT = 3
+REGISTRATION_SHORT_WINDOW = timedelta(minutes=10)
+REGISTRATION_WEEKLY_LIMIT = 8
+RATE_LIMIT_RETENTION = timedelta(days=14)
 APP_TIMEZONE = ZoneInfo("Europe/Bucharest")
 TEAM_COUNT = 3
 TEAM_SIZE = 6
@@ -63,6 +70,10 @@ ROMANIAN_MONTHS = (
     "Dec",
 )
 STATIC_CACHE_SUFFIXES = {".css", ".js", ".svg", ".png", ".webmanifest"}
+
+
+class RestoreTargetNotEmptyError(Exception):
+    pass
 
 
 def cache_control_for_path(raw_path: str) -> str | None:
@@ -138,6 +149,29 @@ def ensure_database() -> None:
                 ON registrations (event_key, week_key, created_at, id)
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS registration_rate_limits (
+                    id BIGSERIAL PRIMARY KEY,
+                    ip_hash TEXT NOT NULL,
+                    event_key TEXT NOT NULL,
+                    week_key TEXT NOT NULL,
+                    created_at TIMESTAMP NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_rate_limits_ip_event_week_created
+                ON registration_rate_limits (ip_hash, event_key, week_key, created_at)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_rate_limits_created
+                ON registration_rate_limits (created_at)
+                """
+            )
         else:
             connection.execute(
                 """
@@ -162,6 +196,29 @@ def ensure_database() -> None:
                 """
                 CREATE INDEX IF NOT EXISTS idx_registrations_event_week_created
                 ON registrations (event_key, week_key, created_at, id)
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS registration_rate_limits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ip_hash TEXT NOT NULL,
+                    event_key TEXT NOT NULL,
+                    week_key TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_rate_limits_ip_event_week_created
+                ON registration_rate_limits (ip_hash, event_key, week_key, created_at)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_rate_limits_created
+                ON registration_rate_limits (created_at)
                 """
             )
             connection.commit()
@@ -445,6 +502,40 @@ def sanitize_names(payload: dict[str, object]) -> list[str]:
     return names
 
 
+def client_ip_from_request(headers, client_address: object = None) -> str:
+    forwarded_for = str(headers.get("X-Forwarded-For", ""))
+    candidates = [forwarded_for.split(",", 1)[0].strip()]
+    if isinstance(client_address, (tuple, list)) and client_address:
+        candidates.append(str(client_address[0]).strip())
+    elif client_address:
+        candidates.append(str(client_address).strip())
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            return ipaddress.ip_address(candidate).compressed
+        except ValueError:
+            continue
+    return "unknown"
+
+
+def hash_client_ip(client_ip: str) -> str:
+    secret = RATE_LIMIT_SECRET or "football-attendance-local-rate-limit"
+    return hmac.new(secret.encode("utf-8"), client_ip.encode("utf-8"), sha256).hexdigest()
+
+
+def rate_limit_retry_after_week(now: datetime) -> int:
+    local_now = now.astimezone(APP_TIMEZONE) if now.tzinfo else now.replace(tzinfo=APP_TIMEZONE)
+    next_week = (local_now + timedelta(days=8 - local_now.isoweekday())).replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    return max(1, math.ceil((next_week - local_now).total_seconds()))
+
+
 def fetch_registrations(
     week_key: str,
     event_key: str = FRIDAY_EVENT,
@@ -498,6 +589,198 @@ def fetch_registrations(
     return registrations
 
 
+def build_registration_backup(
+    week_key: str,
+    event_key: str = FRIDAY_EVENT,
+) -> dict[str, object]:
+    event_key = normalize_event(event_key)
+    return {
+        "backupVersion": 1,
+        "eventKey": event_key,
+        "weekKey": week_key,
+        "weekLabel": week_label_from_key(week_key, event_key),
+        "exportedAt": datetime.now(APP_TIMEZONE).isoformat(),
+        "registrations": fetch_registrations(week_key, event_key),
+    }
+
+
+def parse_registration_backup(
+    payload: dict[str, object],
+    expected_week_key: str,
+    expected_event_key: str | None = None,
+) -> tuple[str, list[dict[str, object]]]:
+    if payload.get("backupVersion") != 1:
+        raise ValueError("Fișierul de backup nu are o versiune acceptată.")
+
+    raw_event_key = str(payload.get("eventKey", "")).strip().lower()
+    if raw_event_key not in EVENT_KEYS:
+        raise ValueError("Fișierul de backup nu conține un meci valid.")
+    if expected_event_key is not None and raw_event_key != normalize_event(expected_event_key):
+        raise ValueError("Backupul aparține celeilalte zile de fotbal.")
+    if str(payload.get("weekKey", "")) != expected_week_key:
+        raise ValueError("Backupul nu aparține săptămânii curente.")
+
+    raw_registrations = payload.get("registrations")
+    if not isinstance(raw_registrations, list) or not raw_registrations:
+        raise ValueError("Fișierul de backup nu conține înscrieri.")
+    if len(raw_registrations) > 200:
+        raise ValueError("Fișierul de backup conține prea multe înscrieri.")
+
+    registrations: list[dict[str, object]] = []
+    previous_created_at: datetime | None = None
+    for expected_position, raw_registration in enumerate(raw_registrations, start=1):
+        if not isinstance(raw_registration, dict):
+            raise ValueError("Fișierul de backup conține o înscriere invalidă.")
+
+        try:
+            position = int(raw_registration.get("position", 0))
+        except (TypeError, ValueError) as error:
+            raise ValueError("Ordinea înscrierilor din backup este invalidă.") from error
+        if position != expected_position:
+            raise ValueError("Ordinea înscrierilor din backup este invalidă.")
+
+        name = str(raw_registration.get("name", "")).strip()
+        if not name or len(name) > 80:
+            raise ValueError("Backupul conține un nume invalid.")
+
+        created_at_text = str(raw_registration.get("createdAt", "")).strip()
+        try:
+            created_at = datetime.strptime(created_at_text, "%Y-%m-%d %H:%M:%S")
+        except ValueError as error:
+            raise ValueError("Backupul conține o dată de înscriere invalidă.") from error
+        if previous_created_at is not None and created_at < previous_created_at:
+            raise ValueError("Ordinea înscrierilor din backup este invalidă.")
+        previous_created_at = created_at
+
+        role = normalize_role(raw_registration.get("role"))
+        raw_team = raw_registration.get("team")
+        if raw_team is None or raw_event_key == WEDNESDAY_EVENT:
+            team = None
+        else:
+            try:
+                team = int(raw_team)
+            except (TypeError, ValueError) as error:
+                raise ValueError("Backupul conține o echipă invalidă.") from error
+            if team not in range(1, TEAM_COUNT + 1):
+                raise ValueError("Backupul conține o echipă invalidă.")
+
+        registrations.append(
+            {
+                "name": name,
+                "createdAt": created_at,
+                "role": role,
+                "team": team,
+            }
+        )
+
+    return raw_event_key, registrations
+
+
+def restore_registration_backup(
+    registrations: list[dict[str, object]],
+    week_key: str,
+    event_key: str,
+) -> int:
+    event_key = normalize_event(event_key)
+    with get_connection() as connection:
+        if using_postgres():
+            connection.execute("LOCK TABLE registrations IN SHARE ROW EXCLUSIVE MODE")
+            existing_count = connection.execute(
+                "SELECT COUNT(*) FROM registrations WHERE week_key = %s AND event_key = %s",
+                (week_key, event_key),
+            ).fetchone()[0]
+        else:
+            connection.execute("BEGIN IMMEDIATE")
+            existing_count = connection.execute(
+                "SELECT COUNT(*) FROM registrations WHERE week_key = ? AND event_key = ?",
+                (week_key, event_key),
+            ).fetchone()[0]
+
+        if existing_count:
+            raise RestoreTargetNotEmptyError
+
+        for registration in registrations:
+            created_at = registration["createdAt"]
+            if using_postgres():
+                connection.execute(
+                    """
+                    INSERT INTO registrations (
+                        submitted_name,
+                        created_at,
+                        week_key,
+                        event_key,
+                        preferred_role,
+                        assigned_team
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        registration["name"],
+                        created_at,
+                        week_key,
+                        event_key,
+                        registration["role"],
+                        registration["team"],
+                    ),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO registrations (
+                        submitted_name,
+                        created_at,
+                        week_key,
+                        event_key,
+                        preferred_role,
+                        assigned_team
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        registration["name"],
+                        created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                        week_key,
+                        event_key,
+                        registration["role"],
+                        registration["team"],
+                    ),
+                )
+
+    return len(registrations)
+
+
+def insert_registration_rows(
+    connection,
+    names: list[str],
+    week_key: str,
+    event_key: str,
+    created_at: datetime,
+) -> list[int]:
+    inserted_ids: list[int] = []
+    if using_postgres():
+        for name in names:
+            row = connection.execute(
+                """
+                INSERT INTO registrations (submitted_name, created_at, week_key, event_key)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+                """,
+                (name, created_at, week_key, event_key),
+            ).fetchone()
+            inserted_ids.append(int(row[0]))
+    else:
+        for name in names:
+            cursor = connection.execute(
+                """
+                INSERT INTO registrations (submitted_name, created_at, week_key, event_key)
+                VALUES (?, ?, ?, ?)
+                """,
+                (name, created_at.strftime("%Y-%m-%d %H:%M:%S"), week_key, event_key),
+            )
+            inserted_ids.append(int(cursor.lastrowid))
+    return inserted_ids
+
+
 def insert_registrations(
     names: list[str],
     week_key: str,
@@ -505,31 +788,100 @@ def insert_registrations(
 ) -> list[int]:
     event_key = normalize_event(event_key)
     created_at = datetime.now(APP_TIMEZONE).replace(microsecond=0, tzinfo=None)
-    inserted_ids: list[int] = []
+    with get_connection() as connection:
+        return insert_registration_rows(connection, names, week_key, event_key, created_at)
+
+
+def insert_rate_limited_registrations(
+    names: list[str],
+    week_key: str,
+    event_key: str,
+    ip_hash: str,
+    now: datetime | None = None,
+) -> tuple[list[int], dict[str, object] | None]:
+    event_key = normalize_event(event_key)
+    current_time = now or datetime.now(APP_TIMEZONE)
+    if current_time.tzinfo:
+        current_time = current_time.astimezone(APP_TIMEZONE)
+    else:
+        current_time = current_time.replace(tzinfo=APP_TIMEZONE)
+    created_at = current_time.replace(microsecond=0, tzinfo=None)
+    recent_cutoff = created_at - REGISTRATION_SHORT_WINDOW
+    retention_cutoff = created_at - RATE_LIMIT_RETENTION
+
     with get_connection() as connection:
         if using_postgres():
-            for name in names:
-                row = connection.execute(
-                    """
-                    INSERT INTO registrations (submitted_name, created_at, week_key, event_key)
-                    VALUES (%s, %s, %s, %s)
-                    RETURNING id
-                    """,
-                    (name, created_at, week_key, event_key),
-                ).fetchone()
-                inserted_ids.append(int(row[0]))
+            lock_key = f"{ip_hash}:{event_key}:{week_key}"
+            connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (lock_key,))
+            connection.execute(
+                "DELETE FROM registration_rate_limits WHERE created_at < %s",
+                (retention_cutoff,),
+            )
+            rows = connection.execute(
+                """
+                SELECT created_at
+                FROM registration_rate_limits
+                WHERE ip_hash = %s AND event_key = %s AND week_key = %s
+                ORDER BY created_at ASC
+                """,
+                (ip_hash, event_key, week_key),
+            ).fetchall()
         else:
-            for name in names:
-                cursor = connection.execute(
-                    """
-                    INSERT INTO registrations (submitted_name, created_at, week_key, event_key)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (name, created_at.strftime("%Y-%m-%d %H:%M:%S"), week_key, event_key),
-                )
-                inserted_ids.append(int(cursor.lastrowid))
-            connection.commit()
-    return inserted_ids
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "DELETE FROM registration_rate_limits WHERE created_at < ?",
+                (retention_cutoff.strftime("%Y-%m-%d %H:%M:%S"),),
+            )
+            rows = connection.execute(
+                """
+                SELECT created_at
+                FROM registration_rate_limits
+                WHERE ip_hash = ? AND event_key = ? AND week_key = ?
+                ORDER BY datetime(created_at) ASC
+                """,
+                (ip_hash, event_key, week_key),
+            ).fetchall()
+
+        submission_times = [
+            row[0] if isinstance(row[0], datetime) else datetime.fromisoformat(str(row[0]))
+            for row in rows
+        ]
+        if len(submission_times) >= REGISTRATION_WEEKLY_LIMIT:
+            return [], {
+                "reason": "weekly",
+                "retryAfter": rate_limit_retry_after_week(current_time),
+            }
+
+        recent_submissions = [created for created in submission_times if created > recent_cutoff]
+        if len(recent_submissions) >= REGISTRATION_SHORT_LIMIT:
+            available_at = recent_submissions[0] + REGISTRATION_SHORT_WINDOW
+            retry_after = max(1, math.ceil((available_at - created_at).total_seconds()))
+            return [], {"reason": "short", "retryAfter": retry_after}
+
+        inserted_ids = insert_registration_rows(
+            connection,
+            names,
+            week_key,
+            event_key,
+            created_at,
+        )
+        if using_postgres():
+            connection.execute(
+                """
+                INSERT INTO registration_rate_limits (ip_hash, event_key, week_key, created_at)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (ip_hash, event_key, week_key, created_at),
+            )
+        else:
+            connection.execute(
+                """
+                INSERT INTO registration_rate_limits (ip_hash, event_key, week_key, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (ip_hash, event_key, week_key, created_at.strftime("%Y-%m-%d %H:%M:%S")),
+            )
+        return inserted_ids, None
 
 
 def update_registration_role(registration_id: int, role: str) -> int:
@@ -878,6 +1230,9 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/api/admin/backup-week":
+            self.handle_admin_backup_week(event_from_query(parsed.query))
+            return
         if parsed.path in {"/echipe", "/teams"}:
             self.path = "/teams.html"
             return super().do_GET()
@@ -911,6 +1266,9 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/admin/delete-registration":
             self.handle_admin_delete_one()
             return
+        if parsed.path == "/api/admin/restore-week":
+            self.handle_admin_restore_week(event_from_query(parsed.query))
+            return
         if parsed.path != "/api/registrations":
             self.send_error(HTTPStatus.NOT_FOUND, "Endpoint not found")
             return
@@ -938,7 +1296,8 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
 
         cleanup_wednesday_registrations()
         event_key = normalize_event(str(payload.get("event", FRIDAY_EVENT)))
-        signup_window = signup_window_payload(event_key=event_key)
+        request_time = datetime.now(APP_TIMEZONE)
+        signup_window = signup_window_payload(now=request_time, event_key=event_key)
         if not signup_window["isOpen"]:
             self.send_json(
                 {
@@ -949,8 +1308,41 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        week_key = current_week_key()
-        submitted_registration_ids = insert_registrations(names, week_key, event_key)
+        week_key = current_week_key(request_time)
+        client_ip = client_ip_from_request(
+            self.headers,
+            getattr(self, "client_address", None),
+        )
+        submitted_registration_ids, rate_limit = insert_rate_limited_registrations(
+            names,
+            week_key,
+            event_key,
+            hash_client_ip(client_ip),
+            now=request_time,
+        )
+        if rate_limit:
+            retry_after = int(rate_limit["retryAfter"])
+            if rate_limit["reason"] == "weekly":
+                error = (
+                    "Ai atins limita de 8 înscrieri pentru acest meci în săptămâna curentă."
+                )
+            else:
+                retry_minutes = max(1, math.ceil(retry_after / 60))
+                error = (
+                    "Ai trimis deja 3 înscrieri în ultimele 10 minute. "
+                    f"Încearcă din nou în aproximativ {retry_minutes} minute."
+                )
+            self.send_json(
+                {
+                    "error": error,
+                    "retryAfter": retry_after,
+                    "signupWindow": signup_window,
+                },
+                status=HTTPStatus.TOO_MANY_REQUESTS,
+                headers={"Retry-After": str(retry_after)},
+            )
+            return
+
         response = attendance_payload(event_key, week_key)
         response["message"] = "Înscrierea a fost salvată."
         response["submittedRegistrationIds"] = submitted_registration_ids
@@ -1034,6 +1426,84 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             ),
         })
         self.send_json(response)
+
+    def handle_admin_backup_week(self, event_key: str = FRIDAY_EVENT) -> None:
+        if not ADMIN_PASSWORD:
+            self.send_json(
+                {"error": "Panoul de administrare nu este configurat."},
+                status=HTTPStatus.SERVICE_UNAVAILABLE,
+            )
+            return
+
+        if not is_admin_authenticated(self.headers.get("Cookie")):
+            self.send_json(
+                {"error": "Autentificare necesară."},
+                status=HTTPStatus.UNAUTHORIZED,
+            )
+            return
+
+        event_key = normalize_event(event_key)
+        active_week = current_week_key()
+        filename = f"football-attendance-{event_key}-{active_week}.json"
+        self.send_json(
+            build_registration_backup(active_week, event_key),
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    def handle_admin_restore_week(self, expected_event_key: str = FRIDAY_EVENT) -> None:
+        if not ADMIN_PASSWORD:
+            self.send_json(
+                {"error": "Panoul de administrare nu este configurat."},
+                status=HTTPStatus.SERVICE_UNAVAILABLE,
+            )
+            return
+
+        if not is_admin_authenticated(self.headers.get("Cookie")):
+            self.send_json(
+                {"error": "Autentificare necesară."},
+                status=HTTPStatus.UNAUTHORIZED,
+            )
+            return
+
+        payload = self.read_json_body()
+        if payload is None:
+            return
+
+        active_week = current_week_key()
+        try:
+            event_key, registrations = parse_registration_backup(
+                payload,
+                active_week,
+                expected_event_key,
+            )
+            restored = restore_registration_backup(registrations, active_week, event_key)
+        except ValueError as error:
+            self.send_json({"error": str(error)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        except RestoreTargetNotEmptyError:
+            self.send_json(
+                {
+                    "error": (
+                        "Lista curentă nu este goală. Backupul nu a fost importat pentru a evita "
+                        "dublarea sau suprascrierea înscrierilor."
+                    )
+                },
+                status=HTTPStatus.CONFLICT,
+            )
+            return
+
+        response = attendance_payload(event_key, active_week)
+        response.update(
+            {
+                "authenticated": True,
+                "restored": restored,
+                "message": f"Au fost restaurate {restored} înscrieri în ordinea salvată.",
+            }
+        )
+        self.send_json(response, status=HTTPStatus.CREATED)
 
     def handle_admin_signup_mode(self) -> None:
         if not ADMIN_PASSWORD:
@@ -1261,10 +1731,17 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON body")
             return None
 
-    def send_json(self, payload: dict[str, object], status: HTTPStatus = HTTPStatus.OK) -> None:
+    def send_json(
+        self,
+        payload: dict[str, object],
+        status: HTTPStatus = HTTPStatus.OK,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        for header, value in (headers or {}).items():
+            self.send_header(header, value)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

@@ -41,6 +41,12 @@ class FrontendContractTestCase(unittest.TestCase):
 
         self.assertIn('id="countdown-card"', source)
         self.assertIn('id="connection-status"', source)
+        self.assertIn('class="mobile-section-nav"', source)
+        self.assertIn('href="#attendance-form"', source)
+        self.assertIn('href="#attendance-list"', source)
+        self.assertIn('id="backup-week-link"', source)
+        self.assertIn('id="restore-week-input"', source)
+        self.assertIn('id="restore-week-button"', source)
         self.assertIn('role="progressbar"', source)
         self.assertIn(".content-grid.is-closed", enhancements)
         self.assertIn("@media (max-width: 700px)", enhancements)
@@ -65,8 +71,8 @@ class FrontendContractTestCase(unittest.TestCase):
         app_script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
         self.assertIn("navigator.serviceWorker.controller", app_script)
         self.assertIn('addEventListener("controllerchange"', app_script)
-        self.assertIn('/styles.css?v=20260831-1', attendance_page)
-        self.assertIn('/app.js?v=20260831-1', attendance_page)
+        self.assertIn('/styles.css?v=20260901-1', attendance_page)
+        self.assertIn('/app.js?v=20260901-1', attendance_page)
 
         shell_match = re.search(r"const APP_SHELL = \[(.*?)\];", worker, re.DOTALL)
         self.assertIsNotNone(shell_match)

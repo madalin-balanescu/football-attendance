@@ -20,17 +20,20 @@ class FakeAttendanceHandler(server.AttendanceHandler):
         method: str = "GET",
         payload: dict[str, object] | None = None,
         cookie: str | None = None,
+        client_ip: str = "203.0.113.10",
     ) -> None:
         self.path = path
         self.command = method
         raw_body = json.dumps(payload).encode("utf-8") if payload is not None else b""
         self.headers = {
             "Content-Length": str(len(raw_body)),
+            "X-Forwarded-For": client_ip,
         }
         if cookie:
             self.headers["Cookie"] = cookie
         self.rfile = io.BytesIO(raw_body)
         self.wfile = io.BytesIO()
+        self.client_address = ("127.0.0.1", 54321)
         self.response_status = None
         self.response_headers: dict[str, list[str]] = {}
 
@@ -60,10 +63,12 @@ class AttendanceServerTestCase(unittest.TestCase):
         self.original_db_path = server.DB_PATH
         self.original_database_url = server.DATABASE_URL
         self.original_admin_password = server.ADMIN_PASSWORD
+        self.original_rate_limit_secret = server.RATE_LIMIT_SECRET
 
         server.DB_PATH = Path(self.tempdir.name) / "attendance.db"
         server.DATABASE_URL = None
         server.ADMIN_PASSWORD = "test-admin"
+        server.RATE_LIMIT_SECRET = "test-rate-limit-secret"
         server.ensure_database()
         self.week_key = server.current_week_key()
 
@@ -72,6 +77,7 @@ class AttendanceServerTestCase(unittest.TestCase):
         server.DB_PATH = self.original_db_path
         server.DATABASE_URL = self.original_database_url
         server.ADMIN_PASSWORD = self.original_admin_password
+        server.RATE_LIMIT_SECRET = self.original_rate_limit_secret
 
     def dispatch(
         self,
@@ -79,8 +85,15 @@ class AttendanceServerTestCase(unittest.TestCase):
         path: str,
         payload: dict[str, object] | None = None,
         cookie: str | None = None,
+        client_ip: str = "203.0.113.10",
     ) -> tuple[int, dict[str, object], dict[str, list[str]]]:
-        handler = FakeAttendanceHandler(path=path, method=method, payload=payload, cookie=cookie)
+        handler = FakeAttendanceHandler(
+            path=path,
+            method=method,
+            payload=payload,
+            cookie=cookie,
+            client_ip=client_ip,
+        )
         if method == "GET":
             handler.do_GET()
         elif method == "POST":
@@ -105,6 +118,34 @@ class AttendanceServerTestCase(unittest.TestCase):
         server.insert_registrations([f"Jucator {index}" for index in range(1, count + 1)], self.week_key)
         return server.fetch_registrations(self.week_key)
 
+    def backup_payload(
+        self,
+        names: list[str] | None = None,
+        event_key: str = server.FRIDAY_EVENT,
+        week_key: str | None = None,
+    ) -> dict[str, object]:
+        backup_names = names or ["Ion", "Vlad", "Mihai"]
+        return {
+            "backupVersion": 1,
+            "eventKey": event_key,
+            "weekKey": week_key or self.week_key,
+            "weekLabel": server.week_label_from_key(self.week_key, event_key),
+            "exportedAt": "2026-09-01T14:30:00+03:00",
+            "registrations": [
+                {
+                    "position": index,
+                    "id": index,
+                    "name": name,
+                    "createdAt": f"2026-09-01 12:00:{index:02d}",
+                    "status": "confirmed",
+                    "role": "any",
+                    "roleLabel": "Oriunde",
+                    "team": None,
+                }
+                for index, name in enumerate(backup_names, start=1)
+            ],
+        }
+
     def test_sanitize_names_trims_and_limits_to_two_entries(self) -> None:
         names = server.sanitize_names(
             {
@@ -114,6 +155,15 @@ class AttendanceServerTestCase(unittest.TestCase):
             }
         )
         self.assertEqual(names, ["Ion", "Popescu"])
+
+    def test_client_ip_is_normalized_and_hashed(self) -> None:
+        client_ip = server.client_ip_from_request(
+            {"X-Forwarded-For": "2001:0db8::1, 10.0.0.1"},
+            ("127.0.0.1", 1234),
+        )
+        self.assertEqual(client_ip, "2001:db8::1")
+        self.assertEqual(server.hash_client_ip(client_ip), server.hash_client_ip(client_ip))
+        self.assertNotIn(client_ip, server.hash_client_ip(client_ip))
 
     def test_normalize_role_falls_back_to_any(self) -> None:
         self.assertEqual(server.normalize_role("forward"), "forward")
@@ -359,6 +409,137 @@ class AttendanceServerTestCase(unittest.TestCase):
             [registration["id"] for registration in payload["registrations"]],
         )
 
+    def test_registration_rate_limit_blocks_fourth_form_within_ten_minutes(self) -> None:
+        server.set_setting("signup_mode", "force_open")
+        for index in range(3):
+            status, _, _ = self.dispatch(
+                "POST",
+                "/api/registrations",
+                payload={"person1": f"Jucator {index + 1}"},
+                client_ip="198.51.100.25",
+            )
+            self.assertEqual(status, HTTPStatus.CREATED)
+
+        status, payload, headers = self.dispatch(
+            "POST",
+            "/api/registrations",
+            payload={"person1": "Jucator blocat"},
+            client_ip="198.51.100.25",
+        )
+
+        self.assertEqual(status, HTTPStatus.TOO_MANY_REQUESTS)
+        self.assertIn("3 înscrieri", payload["error"])
+        self.assertGreater(payload["retryAfter"], 0)
+        self.assertEqual(headers["Retry-After"], [str(payload["retryAfter"])])
+        self.assertEqual(len(server.fetch_registrations(self.week_key)), 3)
+
+        other_status, _, _ = self.dispatch(
+            "POST",
+            "/api/registrations",
+            payload={"person1": "Alt IP"},
+            client_ip="198.51.100.99",
+        )
+        self.assertEqual(other_status, HTTPStatus.CREATED)
+        self.assertEqual(len(server.fetch_registrations(self.week_key)), 4)
+
+    def test_rate_limit_counts_each_form_once_when_it_contains_two_names(self) -> None:
+        server.set_setting("signup_mode", "force_open")
+        for index in range(3):
+            status, _, _ = self.dispatch(
+                "POST",
+                "/api/registrations",
+                payload={
+                    "person1": f"Jucator {index * 2 + 1}",
+                    "person2": f"Jucator {index * 2 + 2}",
+                },
+                client_ip="198.51.100.26",
+            )
+            self.assertEqual(status, HTTPStatus.CREATED)
+
+        status, _, _ = self.dispatch(
+            "POST",
+            "/api/registrations",
+            payload={"person1": "Al saptelea"},
+            client_ip="198.51.100.26",
+        )
+        self.assertEqual(status, HTTPStatus.TOO_MANY_REQUESTS)
+        self.assertEqual(len(server.fetch_registrations(self.week_key)), 6)
+
+    def test_registration_weekly_rate_limit_blocks_ninth_form(self) -> None:
+        moment = datetime(2026, 8, 31, 20, 0, tzinfo=server.APP_TIMEZONE)
+        week_key = server.current_week_key(moment)
+        ip_hash = server.hash_client_ip("198.51.100.27")
+
+        for index in range(8):
+            inserted, rate_limit = server.insert_rate_limited_registrations(
+                [f"Jucator {index + 1}"],
+                week_key,
+                server.FRIDAY_EVENT,
+                ip_hash,
+                now=moment + server.REGISTRATION_SHORT_WINDOW * index,
+            )
+            self.assertEqual(len(inserted), 1)
+            self.assertIsNone(rate_limit)
+
+        inserted, rate_limit = server.insert_rate_limited_registrations(
+            ["Jucator blocat"],
+            week_key,
+            server.FRIDAY_EVENT,
+            ip_hash,
+            now=moment + server.REGISTRATION_SHORT_WINDOW * 8,
+        )
+
+        self.assertEqual(inserted, [])
+        self.assertEqual(rate_limit["reason"], "weekly")
+        self.assertGreater(rate_limit["retryAfter"], 0)
+        self.assertEqual(len(server.fetch_registrations(week_key)), 8)
+
+    def test_registration_rate_limits_are_isolated_per_event(self) -> None:
+        moment = datetime(2026, 8, 31, 20, 0, tzinfo=server.APP_TIMEZONE)
+        week_key = server.current_week_key(moment)
+        ip_hash = server.hash_client_ip("198.51.100.28")
+        for index in range(3):
+            server.insert_rate_limited_registrations(
+                [f"Vineri {index + 1}"],
+                week_key,
+                server.FRIDAY_EVENT,
+                ip_hash,
+                now=moment,
+            )
+
+        inserted, rate_limit = server.insert_rate_limited_registrations(
+            ["Miercuri 1"],
+            week_key,
+            server.WEDNESDAY_EVENT,
+            ip_hash,
+            now=moment,
+        )
+
+        self.assertEqual(len(inserted), 1)
+        self.assertIsNone(rate_limit)
+        self.assertEqual(
+            len(server.fetch_registrations(week_key, server.WEDNESDAY_EVENT)),
+            1,
+        )
+
+    def test_rate_limit_storage_does_not_store_raw_ip_addresses(self) -> None:
+        raw_ip = "198.51.100.29"
+        moment = datetime(2026, 8, 31, 20, 0, tzinfo=server.APP_TIMEZONE)
+        server.insert_rate_limited_registrations(
+            ["Jucator"],
+            server.current_week_key(moment),
+            server.FRIDAY_EVENT,
+            server.hash_client_ip(raw_ip),
+            now=moment,
+        )
+
+        with server.get_connection() as connection:
+            stored_hash = connection.execute(
+                "SELECT ip_hash FROM registration_rate_limits"
+            ).fetchone()[0]
+        self.assertNotEqual(stored_hash, raw_ip)
+        self.assertEqual(stored_hash, server.hash_client_ip(raw_ip))
+
     def test_wednesday_registration_uses_its_own_mode_and_list(self) -> None:
         server.set_setting("signup_mode_wednesday", "force_open")
         status, payload, _ = self.dispatch(
@@ -430,6 +611,137 @@ class AttendanceServerTestCase(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["deleted"], 4)
         self.assertEqual(payload["registrations"], [])
+
+    def test_admin_backup_requires_authentication(self) -> None:
+        status, payload, _ = self.dispatch("GET", "/api/admin/backup-week?event=wednesday")
+
+        self.assertEqual(status, HTTPStatus.UNAUTHORIZED)
+        self.assertEqual(payload["error"], "Autentificare necesară.")
+
+    def test_admin_can_download_selected_current_week_backup(self) -> None:
+        server.insert_registrations(
+            ["Ion", "Vlad"],
+            self.week_key,
+            server.WEDNESDAY_EVENT,
+        )
+        cookie = self.login_admin()
+
+        status, payload, headers = self.dispatch(
+            "GET",
+            "/api/admin/backup-week?event=wednesday",
+            cookie=cookie,
+        )
+
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertEqual(payload["backupVersion"], 1)
+        self.assertEqual(payload["eventKey"], server.WEDNESDAY_EVENT)
+        self.assertEqual(payload["weekKey"], self.week_key)
+        self.assertEqual(
+            [registration["name"] for registration in payload["registrations"]],
+            ["Ion", "Vlad"],
+        )
+        self.assertEqual(
+            headers["Content-Disposition"],
+            [f'attachment; filename="football-attendance-wednesday-{self.week_key}.json"'],
+        )
+        self.assertEqual(headers["X-Content-Type-Options"], ["nosniff"])
+
+    def test_admin_restore_requires_authentication(self) -> None:
+        status, payload, _ = self.dispatch(
+            "POST",
+            "/api/admin/restore-week?event=friday",
+            payload=self.backup_payload(),
+        )
+
+        self.assertEqual(status, HTTPStatus.UNAUTHORIZED)
+        self.assertEqual(payload["error"], "Autentificare necesară.")
+        self.assertEqual(server.fetch_registrations(self.week_key), [])
+
+    def test_admin_can_restore_current_week_backup_in_saved_order(self) -> None:
+        cookie = self.login_admin()
+        backup = self.backup_payload(
+            names=["Primul", "Al doilea", "Al treilea"],
+            event_key=server.WEDNESDAY_EVENT,
+        )
+
+        status, payload, _ = self.dispatch(
+            "POST",
+            "/api/admin/restore-week?event=wednesday",
+            payload=backup,
+            cookie=cookie,
+        )
+
+        self.assertEqual(status, HTTPStatus.CREATED)
+        self.assertEqual(payload["restored"], 3)
+        self.assertEqual(payload["eventKey"], server.WEDNESDAY_EVENT)
+        self.assertEqual(
+            [registration["name"] for registration in payload["registrations"]],
+            ["Primul", "Al doilea", "Al treilea"],
+        )
+        self.assertEqual(
+            [registration["createdAt"] for registration in payload["registrations"]],
+            ["2026-09-01 12:00:01", "2026-09-01 12:00:02", "2026-09-01 12:00:03"],
+        )
+        with server.get_connection() as connection:
+            rate_limit_count = connection.execute(
+                "SELECT COUNT(*) FROM registration_rate_limits"
+            ).fetchone()[0]
+        self.assertEqual(rate_limit_count, 0)
+
+    def test_admin_restore_refuses_to_overwrite_a_non_empty_list(self) -> None:
+        server.insert_registrations(["Existent"], self.week_key)
+        cookie = self.login_admin()
+
+        status, payload, _ = self.dispatch(
+            "POST",
+            "/api/admin/restore-week?event=friday",
+            payload=self.backup_payload(names=["Importat"]),
+            cookie=cookie,
+        )
+
+        self.assertEqual(status, HTTPStatus.CONFLICT)
+        self.assertIn("nu este goală", payload["error"])
+        self.assertEqual(
+            [registration["name"] for registration in server.fetch_registrations(self.week_key)],
+            ["Existent"],
+        )
+
+    def test_admin_restore_rejects_wrong_event_week_and_order(self) -> None:
+        cookie = self.login_admin()
+        invalid_backups = [
+            (
+                self.backup_payload(event_key=server.WEDNESDAY_EVENT),
+                "Backupul aparține celeilalte zile de fotbal.",
+            ),
+            (
+                self.backup_payload(week_key="2026-W01"),
+                "Backupul nu aparține săptămânii curente.",
+            ),
+            (
+                {
+                    **self.backup_payload(),
+                    "registrations": [
+                        {
+                            **self.backup_payload()["registrations"][0],
+                            "position": 2,
+                        }
+                    ],
+                },
+                "Ordinea înscrierilor din backup este invalidă.",
+            ),
+        ]
+
+        for backup, expected_error in invalid_backups:
+            with self.subTest(expected_error=expected_error):
+                status, payload, _ = self.dispatch(
+                    "POST",
+                    "/api/admin/restore-week?event=friday",
+                    payload=backup,
+                    cookie=cookie,
+                )
+                self.assertEqual(status, HTTPStatus.BAD_REQUEST)
+                self.assertEqual(payload["error"], expected_error)
+                self.assertEqual(server.fetch_registrations(self.week_key), [])
 
     def test_admin_clear_week_only_clears_selected_event(self) -> None:
         server.insert_registrations(["Vineri"], self.week_key)

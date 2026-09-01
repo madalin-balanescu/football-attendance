@@ -263,6 +263,9 @@ function buildAppDocument() {
   makeElement(document, "button", "force-open-button");
   makeElement(document, "button", "toggle-placeholder-button");
   makeElement(document, "button", "auto-mode-button");
+  makeElement(document, "a", "backup-week-link");
+  makeElement(document, "input", "restore-week-input");
+  makeElement(document, "button", "restore-week-button");
   makeElement(document, "button", "clear-week-button");
   makeElement(document, "button", "clear-all-button");
   makeElement(document, "button", "admin-logout-button");

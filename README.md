@@ -19,9 +19,11 @@ Weekly football attendance app with separate Friday and Wednesday signup lists, 
 - keyboard, reduced-motion, forced-color, and screen-reader accessibility support
 - first 18 players marked as confirmed
 - extra players placed on the waiting list
+- database-backed registration rate limiting using hashed client IPs
 - admin login protected by `ADMIN_PASSWORD`
 - admin tools to:
   - force the form open, closed, or automatic
+  - download and safely restore the selected current-week list
   - delete one registration
   - clear the current week
   - clear all historical registrations
@@ -41,8 +43,8 @@ Weekly football attendance app with separate Friday and Wednesday signup lists, 
 ## Tech Stack
 
 - Python standard-library HTTP server
-- PostgreSQL in production through `DATABASE_URL`
-- SQLite fallback for local development
+- SQLite by default
+- optional PostgreSQL support through `DATABASE_URL`
 - plain HTML, CSS, and JavaScript on the frontend
 
 ## Local Development
@@ -69,6 +71,11 @@ Then open:
 - `DATABASE_URL`
   If set, the app uses PostgreSQL.
 
+- `RATE_LIMIT_SECRET`
+  Signs anonymized client-IP hashes used by registration rate limiting. Render Blueprints
+  generate this value automatically. For an existing manually configured service, add a
+  long random value in the Render environment before deploying.
+
 - `HOST`
   Defaults to `0.0.0.0`.
 
@@ -84,6 +91,8 @@ Attendance page admin actions are scoped to the selected Friday or Wednesday eve
 - force signup open
 - force signup closed
 - switch back to automatic window handling
+- download the selected current-week list as JSON
+- restore that JSON into an empty list for the same event and ISO week
 - delete one row
 - clear the current week
 - clear all weeks for that event
@@ -115,6 +124,15 @@ Wednesday automatic mode:
 
 Outside each event's window, its form is locked. Friday and Wednesday admin overrides are stored independently.
 
+Each client IP can submit at most:
+
+- 3 registration forms per 10 minutes
+- 8 registration forms per event in the current ISO week
+
+A form containing two names counts as one submission. Limits are isolated between Friday
+and Wednesday, stored in the configured database, and use one-way HMAC hashes instead of
+raw IP addresses.
+
 Admin can override this with:
 
 - `force_open`
@@ -137,17 +155,43 @@ App settings store:
 - Friday signup mode
 - Wednesday signup mode
 
+Rate-limit records store:
+
+- anonymized client-IP hash
+- event and ISO week
+- successful form submission timestamp
+
 ## Deployment
 
 This repo includes [render.yaml](render.yaml), so the simplest deployment path is Render.
+The included configuration uses SQLite and does not provision PostgreSQL.
 
-High-level flow:
+### SQLite snapshot workflow on Render
+
+Render's free web-service filesystem is temporary. Before every deploy:
+
+1. Open the Friday or Wednesday page whose current list must be preserved.
+2. Log in to the admin panel.
+3. Select `Salvează lista curentă` and keep the downloaded JSON file.
+4. Deploy the existing Render service.
+5. Open the same football-day page and log in as admin again.
+6. If the current list is empty, select `Restaurează lista salvată` and choose the JSON file.
+
+Restore safety rules:
+
+- the backup must belong to the same event and current ISO week
+- the target list must be completely empty
+- existing rows are never deleted, replaced, or merged
+- player order, registration timestamps, roles, and Friday team assignments are preserved
+- admin restores do not consume public submission rate limits
+
+Initial deployment flow:
 
 1. Push the repo to GitHub.
-2. Create a new Render Blueprint service.
+2. Create a Render Blueprint or manual web service.
 3. Select this repository.
-4. Let Render provision the app and PostgreSQL database.
-5. Add `ADMIN_PASSWORD` in the Render environment.
+4. Add `ADMIN_PASSWORD` in the Render environment.
+5. Add a long random `RATE_LIMIT_SECRET` when using a manually configured service.
 
 ## Tests
 
@@ -158,8 +202,11 @@ Backend coverage includes:
 - Sunday cleanup and Monday catch-up
 - database migration of existing rows to Friday
 - registration validation
+- short-window and weekly registration rate limits
+- event isolation and anonymized IP storage for rate limits
 - registration ordering
 - admin authentication
+- current-week backup export and guarded restore
 - delete / clear actions
 - role assignment
 - team generation
@@ -173,6 +220,7 @@ Frontend coverage includes:
 - authoritative countdown rendering
 - offline cached-list fallback
 - Wednesday route copy and event-aware requests
+- admin backup restore behavior
 - locked state behavior
 - accessibility and responsive UI contracts
 - manifest and service-worker app-shell validation
@@ -213,6 +261,7 @@ node --check static/teams.js
 
 ## Notes
 
-- local development uses SQLite unless `DATABASE_URL` is provided
-- production should use PostgreSQL
-- free hosting can still have sleeping services or temporary limitations depending on the platform
+- the app uses SQLite unless `DATABASE_URL` is provided
+- Render's free filesystem can reset on deploy, restart, or idle spin-down
+- use the admin snapshot workflow whenever the current list must survive a Render reset
+- snapshot restore is a recovery workflow, not persistent storage

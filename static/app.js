@@ -48,6 +48,9 @@ const adminActions = document.getElementById("admin-actions");
 const forceOpenButton = document.getElementById("force-open-button");
 const togglePlaceholderButton = document.getElementById("toggle-placeholder-button");
 const autoModeButton = document.getElementById("auto-mode-button");
+const backupWeekLink = document.getElementById("backup-week-link");
+const restoreWeekInput = document.getElementById("restore-week-input");
+const restoreWeekButton = document.getElementById("restore-week-button");
 const clearWeekButton = document.getElementById("clear-week-button");
 const clearAllButton = document.getElementById("clear-all-button");
 const adminLogoutButton = document.getElementById("admin-logout-button");
@@ -129,6 +132,7 @@ function applyEventContent() {
   lockedScheduleCopy.textContent = content.lockedSchedule;
   fridayEventLink.setAttribute("aria-current", eventKey === "friday" ? "page" : "false");
   wednesdayEventLink.setAttribute("aria-current", eventKey === "wednesday" ? "page" : "false");
+  backupWeekLink.setAttribute("href", eventApiUrl("/api/admin/backup-week"));
   teamsPageLink.classList.toggle("hidden", eventKey !== "friday");
 }
 
@@ -585,6 +589,7 @@ async function loadAdminStatus() {
 
 function setAdminExpanded(expanded) {
   isAdminExpanded = expanded;
+  document.body.classList.toggle("admin-is-expanded", expanded);
   adminContent.classList.toggle("hidden", !expanded);
   adminToggle.setAttribute("aria-expanded", String(expanded));
   adminToggleIcon.textContent = expanded ? "-" : "+";
@@ -724,6 +729,58 @@ async function setSignupMode(mode) {
   }
 }
 
+async function restoreWeekFromFile(file) {
+  adminMessage.textContent = "";
+  restoreWeekButton.disabled = true;
+  restoreWeekButton.textContent = "Se restaurează...";
+
+  try {
+    const rawBackup = await file.text();
+    let backup;
+    try {
+      backup = JSON.parse(rawBackup);
+    } catch {
+      throw new Error("Fișierul selectat nu conține JSON valid.");
+    }
+    if (backup.eventKey !== eventKey) {
+      throw new Error("Backupul aparține celeilalte zile de fotbal.");
+    }
+
+    const response = await fetch(eventApiUrl("/api/admin/restore-week"), {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(backup),
+    });
+    const payload = await parseJsonResponse(response);
+    if (!response.ok) {
+      if (response.status === 401) {
+        setAdminAuthenticated(false);
+      }
+      throw new Error(payload.error || "Lista nu a putut fi restaurată.");
+    }
+
+    syncDashboardPayload(payload);
+    cacheDashboardPayload(payload);
+    adminMessage.textContent = payload.message;
+  } catch (error) {
+    adminMessage.textContent = error.message;
+  } finally {
+    restoreWeekInput.value = "";
+    restoreWeekButton.disabled = false;
+    restoreWeekButton.textContent = "Restaurează lista salvată";
+  }
+}
+
+async function handleRestoreFileSelection() {
+  const [file] = restoreWeekInput.files || [];
+  if (file) {
+    await restoreWeekFromFile(file);
+  }
+}
+
 async function deleteOneRegistration(registrationId, triggerButton) {
   adminMessage.textContent = "";
   triggerButton.disabled = true;
@@ -774,6 +831,8 @@ adminToggle.addEventListener("click", () => setAdminExpanded(!isAdminExpanded));
 forceOpenButton.addEventListener("click", () => setSignupMode("force_open"));
 togglePlaceholderButton.addEventListener("click", () => setSignupMode("force_closed"));
 autoModeButton.addEventListener("click", () => setSignupMode("auto"));
+restoreWeekButton.addEventListener("click", () => restoreWeekInput.click());
+restoreWeekInput.addEventListener("change", handleRestoreFileSelection);
 clearWeekButton.addEventListener("click", () =>
   clearRegistrations(eventApiUrl("/api/admin/clear-week"), clearWeekButton),
 );

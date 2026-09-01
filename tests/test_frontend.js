@@ -87,6 +87,10 @@ test("app.js bootstraps dashboard and clears boot state after initial fetches", 
   assert.equal(loaded.getElementById("signup-state-title").textContent, "Deschis acum");
   assert.equal(loaded.getElementById("content-grid").classList.contains("is-closed"), false);
   assert.equal(loaded.getElementById("match-location-name").textContent, "Magic Stadium - Tudor");
+  assert.equal(
+    loaded.getElementById("backup-week-link").getAttribute("href"),
+    "/api/admin/backup-week?event=friday",
+  );
   assert.match(
     loaded.getElementById("match-location-link").getAttribute("href"),
     /Magic\+Stadium/,
@@ -263,6 +267,82 @@ test("app.js locks form and button when signup window is closed", async () => {
     "Înscrierile sunt închise",
   );
   assert.equal(document.getElementById("content-grid").classList.contains("is-closed"), true);
+});
+
+test("app.js restores an authenticated backup file and refreshes the selected list", async () => {
+  const document = buildAppDocument();
+  const restoredPayload = appPayload({
+    registrations: [
+      {
+        id: 7,
+        position: 1,
+        name: "Restaurat",
+        createdAt: "2026-09-01 12:00:01",
+        status: "confirmed",
+      },
+    ],
+  });
+  restoredPayload.message = "A fost restaurată o înscriere.";
+  const { context, requests } = loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: true } },
+    { body: appPayload({ registrations: [] }) },
+    { status: 201, body: restoredPayload },
+  ]);
+
+  await flush();
+  const backup = {
+    backupVersion: 1,
+    eventKey: "friday",
+    weekKey: "2026-W36",
+    registrations: [
+      {
+        position: 1,
+        name: "Restaurat",
+        createdAt: "2026-09-01 12:00:01",
+        role: "any",
+        team: null,
+      },
+    ],
+  };
+
+  await context.restoreWeekFromFile({
+    text: async () => JSON.stringify(backup),
+  });
+
+  assert.equal(requests[2].url, "/api/admin/restore-week?event=friday");
+  assert.equal(requests[2].options.method, "POST");
+  assert.deepEqual(JSON.parse(requests[2].options.body), backup);
+  assert.equal(document.getElementById("attendance-table-body").children.length, 1);
+  assert.equal(document.getElementById("admin-message").textContent, restoredPayload.message);
+  assert.equal(document.getElementById("restore-week-button").disabled, false);
+  assert.equal(
+    document.getElementById("restore-week-button").textContent,
+    "Restaurează lista salvată",
+  );
+});
+
+test("app.js refuses a backup file for the other football day before upload", async () => {
+  const document = buildAppDocument();
+  const { context, requests } = loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: true } },
+    { body: appPayload({ registrations: [] }) },
+  ]);
+
+  await flush();
+  await context.restoreWeekFromFile({
+    text: async () => JSON.stringify({
+      backupVersion: 1,
+      eventKey: "wednesday",
+      weekKey: "2026-W36",
+      registrations: [],
+    }),
+  });
+
+  assert.equal(requests.length, 2);
+  assert.equal(
+    document.getElementById("admin-message").textContent,
+    "Backupul aparține celeilalte zile de fotbal.",
+  );
 });
 
 test("app.js shows an authoritative countdown for the next automatic opening", async () => {

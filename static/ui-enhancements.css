@@ -3,6 +3,10 @@ html {
   text-rendering: optimizeLegibility;
 }
 
+.mobile-section-nav {
+  display: none;
+}
+
 .skip-link {
   position: fixed;
   top: 12px;
@@ -200,6 +204,75 @@ tbody tr.waiting {
 }
 
 @media (max-width: 700px) {
+  body {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  #attendance-form,
+  #attendance-list {
+    scroll-margin-top: 12px;
+  }
+
+  .mobile-section-nav {
+    position: fixed;
+    left: 50%;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    z-index: 18;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    width: min(calc(100% - 24px), 420px);
+    padding: 6px;
+    border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--card-solid) 92%, transparent);
+    box-shadow: 0 14px 34px rgba(16, 35, 68, 0.22);
+    backdrop-filter: blur(16px);
+    transform: translateX(-50%);
+  }
+
+  body.admin-is-expanded .mobile-section-nav {
+    display: none;
+  }
+
+  .mobile-section-link {
+    display: inline-flex;
+    min-width: 0;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 10px 12px;
+    border-radius: 13px;
+    color: var(--text);
+    font-size: 0.8rem;
+    font-weight: 800;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .mobile-section-link-primary {
+    color: #fff;
+    background: linear-gradient(135deg, var(--blue), var(--blue-deep));
+  }
+
+  .mobile-section-link svg {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2;
+  }
+
+  .mobile-section-link:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--blue) 42%, transparent);
+    outline-offset: 1px;
+  }
+
   .countdown-card {
     grid-template-columns: auto minmax(0, 1fr);
     gap: 3px 9px;
@@ -315,6 +388,7 @@ tbody tr.waiting {
   .hero-card,
   .admin-toggle-compact,
   .form-locked-overlay,
+  .mobile-section-nav,
   .submission-overlay {
     backdrop-filter: none;
   }
