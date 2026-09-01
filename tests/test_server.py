@@ -21,6 +21,7 @@ class FakeAttendanceHandler(server.AttendanceHandler):
         payload: dict[str, object] | None = None,
         cookie: str | None = None,
         client_ip: str = "203.0.113.10",
+        authorization: str | None = None,
     ) -> None:
         self.path = path
         self.command = method
@@ -31,6 +32,8 @@ class FakeAttendanceHandler(server.AttendanceHandler):
         }
         if cookie:
             self.headers["Cookie"] = cookie
+        if authorization:
+            self.headers["Authorization"] = authorization
         self.rfile = io.BytesIO(raw_body)
         self.wfile = io.BytesIO()
         self.client_address = ("127.0.0.1", 54321)
@@ -86,6 +89,7 @@ class AttendanceServerTestCase(unittest.TestCase):
         payload: dict[str, object] | None = None,
         cookie: str | None = None,
         client_ip: str = "203.0.113.10",
+        authorization: str | None = None,
     ) -> tuple[int, dict[str, object], dict[str, list[str]]]:
         handler = FakeAttendanceHandler(
             path=path,
@@ -93,6 +97,7 @@ class AttendanceServerTestCase(unittest.TestCase):
             payload=payload,
             cookie=cookie,
             client_ip=client_ip,
+            authorization=authorization,
         )
         if method == "GET":
             handler.do_GET()
@@ -865,6 +870,171 @@ class AttendanceServerTestCase(unittest.TestCase):
         self.assertIn("roleOptions", payload)
         self.assertEqual(payload["roleOptions"][0]["label"], "Atac")
         self.assertTrue(any(registration["team"] for registration in payload["registrations"][:6]))
+
+    def test_submission_creates_one_private_link_and_stores_only_its_hash(self) -> None:
+        server.set_setting("signup_mode", "force_open")
+        status, payload, _ = self.dispatch(
+            "POST",
+            "/api/registrations",
+            payload={"person1": "Ion", "person2": "Vlad", "event": "friday"},
+        )
+
+        self.assertEqual(status, 201)
+        self.assertEqual(
+            payload["message"],
+            "Înscriere reușită. Salvează linkul pentru modificare sau retragere.",
+        )
+        token = str(payload["managementPath"]).rsplit("/", 1)[-1]
+        self.assertRegex(token, r"^[A-Za-z0-9_-]{43,128}$")
+
+        connection = sqlite3.connect(server.DB_PATH)
+        try:
+            stored_hashes = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT management_token_hash FROM registrations"
+                ).fetchall()
+            }
+            raw_database = server.DB_PATH.read_bytes()
+        finally:
+            connection.close()
+        self.assertEqual(stored_hashes, {server.hash_management_token(token)})
+        self.assertNotIn(token.encode("utf-8"), raw_database)
+
+        status, managed, _ = self.dispatch(
+            "GET",
+            "/api/management",
+            authorization=f"Bearer {token}",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual([row["name"] for row in managed["registrations"]], ["Ion", "Vlad"])
+
+    def test_withdrawal_keeps_audit_row_and_promotes_first_waiting_player(self) -> None:
+        token, token_hash = server.create_management_token()
+        created_at = datetime(2026, 9, 1, 12, 0, 0)
+        with server.get_connection() as connection:
+            target_id = server.insert_registration_rows(
+                connection,
+                ["Target"],
+                self.week_key,
+                server.FRIDAY_EVENT,
+                created_at,
+                token_hash,
+            )[0]
+        server.insert_registrations(
+            [f"Jucator {index}" for index in range(1, 19)],
+            self.week_key,
+        )
+        self.assertEqual(server.fetch_registrations(self.week_key)[-1]["status"], "waiting")
+
+        status, payload, _ = self.dispatch(
+            "POST",
+            "/api/management/withdraw",
+            payload={"registrationId": target_id, "confirmed": True},
+            authorization=f"Bearer {token}",
+        )
+
+        self.assertEqual(status, 200)
+        self.assertFalse(payload["registrations"][0]["active"])
+        active = server.fetch_registrations(self.week_key)
+        self.assertEqual(len(active), 18)
+        self.assertEqual(active[-1]["name"], "Jucator 18")
+        self.assertEqual(active[-1]["position"], 18)
+        self.assertEqual(active[-1]["status"], "confirmed")
+        self.assertEqual(server.fetch_inactive_registrations(self.week_key)[0]["name"], "Target")
+
+    def test_withdrawal_requires_token_id_and_explicit_confirmation(self) -> None:
+        token, token_hash = server.create_management_token()
+        created_at = datetime(2026, 9, 1, 12, 0, 0)
+        with server.get_connection() as connection:
+            registration_id = server.insert_registration_rows(
+                connection,
+                ["Ion"],
+                self.week_key,
+                server.FRIDAY_EVENT,
+                created_at,
+                token_hash,
+            )[0]
+
+        status, payload, _ = self.dispatch(
+            "POST",
+            "/api/management/withdraw",
+            payload={"name": "Ion", "confirmed": True},
+            authorization=f"Bearer {token}",
+        )
+        self.assertEqual(status, 404)
+        self.assertEqual(len(server.fetch_registrations(self.week_key)), 1)
+
+        status, payload, _ = self.dispatch(
+            "POST",
+            "/api/management/withdraw",
+            payload={"registrationId": registration_id},
+            authorization=f"Bearer {token}",
+            client_ip="203.0.113.11",
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(payload["error"], "Confirmarea retragerii este obligatorie.")
+        self.assertEqual(len(server.fetch_registrations(self.week_key)), 1)
+
+    def test_cancellation_attempts_are_rate_limited(self) -> None:
+        attempt_time = datetime(2026, 9, 1, 12, 0, 0, tzinfo=server.APP_TIMEZONE)
+        ip_hash = server.hash_client_ip("203.0.113.90")
+        for _ in range(server.CANCELLATION_ATTEMPT_LIMIT):
+            self.assertIsNone(server.record_cancellation_attempt(ip_hash, attempt_time))
+        self.assertGreater(server.record_cancellation_attempt(ip_hash, attempt_time) or 0, 0)
+
+    def test_inactive_audit_is_visible_only_to_admin(self) -> None:
+        token, token_hash = server.create_management_token()
+        created_at = datetime(2026, 9, 1, 12, 0, 0)
+        with server.get_connection() as connection:
+            registration_id = server.insert_registration_rows(
+                connection,
+                ["Retras"],
+                self.week_key,
+                server.FRIDAY_EVENT,
+                created_at,
+                token_hash,
+            )[0]
+        server.withdraw_managed_registration(token_hash, registration_id)
+
+        status, public_payload, _ = self.dispatch("GET", "/api/registrations")
+        self.assertEqual(status, 200)
+        self.assertNotIn("inactiveRegistrations", public_payload)
+
+        cookie = self.login_admin()
+        status, admin_payload, _ = self.dispatch(
+            "GET",
+            "/api/registrations",
+            cookie=cookie,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(admin_payload["inactiveRegistrations"][0]["name"], "Retras")
+        self.assertEqual(admin_payload["inactiveRegistrations"][0]["status"], "withdrawn")
+
+    def test_backup_restores_token_hash_and_inactive_state_without_raw_token(self) -> None:
+        token, token_hash = server.create_management_token()
+        created_at = datetime(2026, 9, 1, 12, 0, 0)
+        with server.get_connection() as connection:
+            registration_id = server.insert_registration_rows(
+                connection,
+                ["Ion"],
+                self.week_key,
+                server.FRIDAY_EVENT,
+                created_at,
+                token_hash,
+            )[0]
+        server.withdraw_managed_registration(token_hash, registration_id, created_at)
+        backup = server.build_registration_backup(self.week_key)
+
+        self.assertEqual(backup["registrations"][0]["managementTokenHash"], token_hash)
+        self.assertNotIn(token, json.dumps(backup))
+        server.delete_registrations(self.week_key, server.FRIDAY_EVENT)
+        event_key, registrations = server.parse_registration_backup(backup, self.week_key)
+        server.restore_registration_backup(registrations, self.week_key, event_key)
+
+        restored = server.fetch_managed_submission(token_hash)
+        self.assertIsNotNone(restored)
+        self.assertFalse(restored["registrations"][0]["active"])
 
 
 if __name__ == "__main__":

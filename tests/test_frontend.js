@@ -193,6 +193,42 @@ test("app.js submitRegistration updates message and resets form on success", asy
   assert.equal(JSON.parse(requests[2].options.body).event, "friday");
 });
 
+test("app.js keeps and displays the private management link after submission", async () => {
+  const document = buildAppDocument();
+  const token = "a".repeat(43);
+  const managementPath = `/inscriere/${token}`;
+  const { context, storage } = loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: false } },
+    { body: appPayload() },
+    {
+      status: 201,
+      body: {
+        ...appPayload(),
+        message: "Înscriere reușită. Salvează linkul pentru modificare sau retragere.",
+        submittedRegistrationIds: [1],
+        managementPath,
+      },
+    },
+  ]);
+
+  await flush();
+  document.getElementById("person1").value = "Ion";
+  await context.submitRegistration({ preventDefault() {} });
+
+  assert.equal(document.getElementById("success-title").textContent, "Înscriere reușită");
+  assert.equal(
+    document.getElementById("success-summary").textContent,
+    "Salvează linkul pentru modificare sau retragere.",
+  );
+  assert.equal(document.getElementById("success-management-link").getAttribute("href"), managementPath);
+  assert.equal(document.getElementById("success-management-actions").classList.contains("hidden"), false);
+  assert.equal(document.getElementById("saved-management-panel").classList.contains("hidden"), false);
+  assert.equal(document.getElementById("success-panel").scrollIntoViewOptions.behavior, "smooth");
+  assert.equal(document.getElementById("success-panel").scrollIntoViewOptions.block, "center");
+  const saved = JSON.parse(storage.get("football-attendance:management-links"));
+  assert.equal(saved[0].path, managementPath);
+});
+
 test("app.js configures the Wednesday page and sends requests to the Wednesday event", async () => {
   const document = buildAppDocument();
   const { context, requests } = loadScript(

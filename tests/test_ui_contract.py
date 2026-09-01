@@ -37,6 +37,7 @@ class FrontendContractTestCase(unittest.TestCase):
 
     def test_attendance_page_keeps_critical_responsive_contracts(self) -> None:
         source = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
         enhancements = (STATIC_DIR / "ui-enhancements.css").read_text(encoding="utf-8")
 
         self.assertIn('id="countdown-card"', source)
@@ -56,6 +57,16 @@ class FrontendContractTestCase(unittest.TestCase):
         self.assertIn("width: clamp(108px, 31vw, 122px)", enhancements)
         self.assertIn(".attendance-list-table .time-date", enhancements)
         self.assertIn("border-left: 1px solid", enhancements)
+        self.assertRegex(
+            styles,
+            r"\.hero-card\s*\{[^}]*overflow:\s*clip;",
+            "The hero must clip decoration without becoming an internal scroll container.",
+        )
+        self.assertRegex(styles, r"\.hero-card::after\s*\{[^}]*inset:\s*auto 0 0 40%;")
+        self.assertRegex(
+            styles,
+            r':root\[data-event="wednesday"\] \.hero-card::after\s*\{[^}]*inset:\s*auto 0 0 36%;',
+        )
 
     def test_manifest_and_service_worker_cover_the_app_shell(self) -> None:
         manifest = json.loads((STATIC_DIR / "manifest.webmanifest").read_text(encoding="utf-8"))
@@ -71,8 +82,8 @@ class FrontendContractTestCase(unittest.TestCase):
         app_script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
         self.assertIn("navigator.serviceWorker.controller", app_script)
         self.assertIn('addEventListener("controllerchange"', app_script)
-        self.assertIn('/styles.css?v=20260901-1', attendance_page)
-        self.assertIn('/app.js?v=20260901-1', attendance_page)
+        self.assertIn('/styles.css?v=20260901-4', attendance_page)
+        self.assertIn('/app.js?v=20260901-4', attendance_page)
 
         shell_match = re.search(r"const APP_SHELL = \[(.*?)\];", worker, re.DOTALL)
         self.assertIsNotNone(shell_match)
@@ -105,6 +116,21 @@ class FrontendContractTestCase(unittest.TestCase):
         for phrase in legacy_phrases:
             with self.subTest(phrase=phrase):
                 self.assertNotIn(phrase, source)
+
+    def test_private_management_page_requires_confirmation_and_hides_from_search(self) -> None:
+        source = (STATIC_DIR / "manage.html").read_text(encoding="utf-8")
+        script = (STATIC_DIR / "manage.js").read_text(encoding="utf-8")
+        parser = IdCollector()
+        parser.feed(source)
+
+        self.assertEqual(len(parser.ids), len(set(parser.ids)))
+        self.assertIn('content="noindex, nofollow, noarchive"', source)
+        self.assertIn('id="copy-current-link"', source)
+        self.assertIn('id="managed-registrations"', source)
+        self.assertIn("window.confirm", script)
+        self.assertIn("registrationId: registration.id", script)
+        self.assertIn("confirmed: true", script)
+        self.assertNotIn("registration.name, confirmed", script)
 
 
 if __name__ == "__main__":

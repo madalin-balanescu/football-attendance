@@ -40,6 +40,11 @@ const successPanel = document.getElementById("success-panel");
 const successTitle = document.getElementById("success-title");
 const successSummary = document.getElementById("success-summary");
 const successDetails = document.getElementById("success-details");
+const successManagementActions = document.getElementById("success-management-actions");
+const successManagementLink = document.getElementById("success-management-link");
+const copyManagementLinkButton = document.getElementById("copy-management-link");
+const savedManagementPanel = document.getElementById("saved-management-panel");
+const savedManagementLinks = document.getElementById("saved-management-links");
 const adminPanel = document.getElementById("admin-panel");
 const adminLoginForm = document.getElementById("admin-login-form");
 const adminPasswordInput = document.getElementById("admin-password");
@@ -108,6 +113,7 @@ let countdownClockOffset = 0;
 let countdownRefreshPending = false;
 
 const DASHBOARD_CACHE_KEY = `football-attendance:${eventKey}`;
+const MANAGEMENT_LINKS_KEY = "football-attendance:management-links";
 
 function eventApiUrl(path) {
   return `${path}?event=${eventKey}`;
@@ -152,9 +158,73 @@ function setConnectionStatus(isOnline, isUsingCache = false) {
 
 function cacheDashboardPayload(payload) {
   try {
-    localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(payload));
+    const publicPayload = { ...payload };
+    delete publicPayload.inactiveRegistrations;
+    delete publicPayload.authenticated;
+    localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(publicPayload));
   } catch {
     // The live API remains the source of truth when browser storage is unavailable.
+  }
+}
+
+function absoluteManagementUrl(path) {
+  const origin = String(window.location?.origin || "").replace(/\/$/, "");
+  return origin ? `${origin}${path}` : path;
+}
+
+function readSavedManagementLinks() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MANAGEMENT_LINKS_KEY) || "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((entry) => /^\/inscriere\/[A-Za-z0-9_-]{43,128}$/.test(entry?.path || ""))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function renderSavedManagementLinks() {
+  const links = readSavedManagementLinks();
+  savedManagementLinks.innerHTML = "";
+  savedManagementPanel.classList.toggle("hidden", links.length === 0);
+
+  links.forEach((entry) => {
+    const item = document.createElement("div");
+    item.className = "saved-management-item";
+    const link = document.createElement("a");
+    link.setAttribute("href", entry.path);
+    link.textContent = entry.eventKey === "wednesday" ? "Înscriere miercuri" : "Înscriere vineri";
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "secondary-button compact-button";
+    copyButton.textContent = "Copiază linkul";
+    copyButton.addEventListener("click", () => copyManagementLink(entry.path, copyButton));
+    item.append(link, copyButton);
+    savedManagementLinks.appendChild(item);
+  });
+}
+
+function saveManagementLink(path) {
+  const links = readSavedManagementLinks().filter((entry) => entry.path !== path);
+  links.unshift({ path, eventKey, savedAt: new Date().toISOString() });
+  try {
+    localStorage.setItem(MANAGEMENT_LINKS_KEY, JSON.stringify(links.slice(0, 10)));
+  } catch {
+    // The visible link can still be copied when browser storage is unavailable.
+  }
+  renderSavedManagementLinks();
+}
+
+async function copyManagementLink(path, triggerButton) {
+  const text = absoluteManagementUrl(path);
+  try {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      throw new Error("Clipboard unavailable");
+    }
+    await navigator.clipboard.writeText(text);
+    triggerButton.textContent = "Link copiat";
+  } catch {
+    triggerButton.textContent = "Copiază adresa din link";
   }
 }
 
@@ -348,7 +418,10 @@ function syncDashboardPayload(payload) {
   }
 
   updateSignupWindowState(payload.signupWindow);
-  renderRows(Array.isArray(payload.registrations) ? payload.registrations : []);
+  renderRows(
+    Array.isArray(payload.registrations) ? payload.registrations : [],
+    Array.isArray(payload.inactiveRegistrations) ? payload.inactiveRegistrations : [],
+  );
 }
 
 function updateLiveBoard(registrations = []) {
@@ -399,6 +472,7 @@ function flashSuccessPanel(payload) {
     ? `Mai sunt ${spotsLeft} ${spotsLeft === 1 ? "loc confirmat disponibil" : "locuri confirmate disponibile"}.`
     : "Primele 18 locuri sunt ocupate; înscrierile noi intră pe lista de așteptare.";
   successDetails.innerHTML = "";
+  const managementPath = String(payload.managementPath || "");
 
   submitted.forEach((registration) => {
     const detail = document.createElement("li");
@@ -414,12 +488,29 @@ function flashSuccessPanel(payload) {
   }
 
   successPanel.classList.remove("hidden");
+  successManagementActions.classList.toggle("hidden", !managementPath);
+  if (managementPath) {
+    successTitle.textContent = "Înscriere reușită";
+    successSummary.textContent = "Salvează linkul pentru modificare sau retragere.";
+    successManagementLink.setAttribute("href", managementPath);
+    copyManagementLinkButton.textContent = "Copiază linkul";
+    saveManagementLink(managementPath);
+  }
   successPanel.focus?.({ preventScroll: true });
+  if (managementPath && typeof successPanel.scrollIntoView === "function") {
+    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    successPanel.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "center",
+    });
+  }
   window.clearTimeout(flashSuccessPanel.timeoutId);
-  flashSuccessPanel.timeoutId = window.setTimeout(() => {
-    successPanel.classList.add("hidden");
-  }, 6500);
-  flashSuccessPanel.timeoutId?.unref?.();
+  if (!managementPath) {
+    flashSuccessPanel.timeoutId = window.setTimeout(() => {
+      successPanel.classList.add("hidden");
+    }, 6500);
+    flashSuccessPanel.timeoutId?.unref?.();
+  }
 }
 
 function updateSignupWindowState(signupWindow) {
@@ -453,15 +544,18 @@ function updateSignupWindowState(signupWindow) {
   submitButtonLabel.textContent = "Trimite înscrierea";
 }
 
-function renderRows(registrations) {
+function renderRows(registrations, inactiveRegistrations = []) {
   tableBody.innerHTML = "";
   updateLiveBoard(registrations);
+  const visibleRegistrations = isAdminAuthenticated
+    ? [...registrations, ...inactiveRegistrations]
+    : registrations;
 
   const newestRegistrationId = registrations.length ? registrations[registrations.length - 1].id : null;
   const shouldAnimateNewest = newestRegistrationId !== null && newestRegistrationId !== lastSeenRegistrationId;
   lastSeenRegistrationId = newestRegistrationId;
 
-  if (!registrations.length) {
+  if (!visibleRegistrations.length) {
     const content = emptyStateTemplate.content.cloneNode(true);
     const cell = content.querySelector("td");
     cell.colSpan = isAdminAuthenticated ? 5 : 4;
@@ -469,7 +563,7 @@ function renderRows(registrations) {
     return;
   }
 
-  registrations.forEach((registration) => {
+  visibleRegistrations.forEach((registration) => {
     const row = document.createElement("tr");
     row.className = registration.status;
     if (shouldAnimateNewest && registration.id === newestRegistrationId) {
@@ -478,7 +572,7 @@ function renderRows(registrations) {
 
     const positionCell = document.createElement("td");
     positionCell.dataset.label = "Poziție";
-    positionCell.textContent = registration.position;
+    positionCell.textContent = registration.status === "withdrawn" ? "—" : registration.position;
 
     const createdAtCell = document.createElement("td");
     createdAtCell.className = "time-cell";
@@ -508,7 +602,9 @@ function renderRows(registrations) {
     statusCell.dataset.label = "Status";
     const badge = document.createElement("span");
     badge.className = "status-badge";
-    badge.textContent = registration.status === "confirmed" ? "Confirmat" : "Așteptare";
+    badge.textContent = registration.status === "confirmed"
+      ? "Confirmat"
+      : registration.status === "waiting" ? "Așteptare" : "Retrasă";
     statusCell.appendChild(badge);
 
     row.append(positionCell, createdAtCell, nameCell, statusCell);
@@ -819,6 +915,7 @@ async function logoutAdmin() {
   });
   setAdminAuthenticated(false);
   adminMessage.textContent = "Te-ai delogat din panoul de administrare.";
+  await loadRegistrations();
 }
 
 function toggleTheme() {
@@ -841,6 +938,9 @@ clearAllButton.addEventListener("click", () =>
 );
 adminLogoutButton.addEventListener("click", logoutAdmin);
 themeToggle.addEventListener("click", toggleTheme);
+copyManagementLinkButton.addEventListener("click", () =>
+  copyManagementLink(successManagementLink.getAttribute("href"), copyManagementLinkButton),
+);
 
 applyEventContent();
 applyTheme(currentTheme);
@@ -848,6 +948,7 @@ setAdminExpanded(false);
 setAppReady(false);
 bindConnectivityEvents();
 registerServiceWorker();
+renderSavedManagementLinks();
 
 Promise.allSettled([loadAdminStatus(), loadRegistrations()]).then((results) => {
   const registrationResult = results[1];

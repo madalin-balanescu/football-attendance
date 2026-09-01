@@ -15,6 +15,9 @@ Weekly football attendance app with separate Friday and Wednesday signup lists, 
 - live countdown to the next opening or current closing time
 - adaptive layout that prioritizes signup while open and the roster while closed
 - detailed confirmation showing each submitted player's position and status
+- one private management link per submission, saved in the browser and shareable with the second player
+- per-player withdrawal with confirmation and automatic waiting-list promotion
+- inactive cancellation audit history for authenticated admins
 - installable PWA shell with offline UI and last-known-list fallback
 - keyboard, reduced-motion, forced-color, and screen-reader accessibility support
 - first 18 players marked as confirmed
@@ -39,6 +42,7 @@ Weekly football attendance app with separate Friday and Wednesday signup lists, 
 - `/wednesday` - alias for the Wednesday attendance page
 - `/echipe` - team builder page
 - `/teams` - alias for the team builder page
+- `/inscriere/<private-token>` - private management page created after a new submission
 
 ## Tech Stack
 
@@ -94,6 +98,7 @@ Attendance page admin actions are scoped to the selected Friday or Wednesday eve
 - download the selected current-week list as JSON
 - restore that JSON into an empty list for the same event and ISO week
 - delete one row
+- review self-withdrawn registrations as inactive audit rows
 - clear the current week
 - clear all weeks for that event
 
@@ -133,6 +138,17 @@ A form containing two names counts as one submission. Limits are isolated betwee
 and Wednesday, stored in the configured database, and use one-way HMAC hashes instead of
 raw IP addresses.
 
+Every new public submission receives a cryptographically random private management token.
+The raw token is returned once in the management URL and saved by the frontend in that
+browser. SQLite/PostgreSQL stores only its SHA-256 hash. Both names in the same form share
+the link but have separate `Retrage` actions. A withdrawal requires the private token,
+registration ID, and explicit confirmation; names alone cannot remove a registration.
+Cancellation attempts are limited to 5 per client IP in 10 minutes.
+
+Withdrawn rows stay in the database as inactive audit records. Public ordering ignores
+inactive rows, so the first waiting player moves automatically into the first 18. Existing
+rows created before this feature have no token and remain removable only by an admin.
+
 Admin can override this with:
 
 - `force_open`
@@ -149,6 +165,8 @@ Registrations store:
 - event key (`friday` or `wednesday`)
 - preferred role
 - generated team assignment
+- management-token hash (never the raw token)
+- active/inactive state and withdrawal timestamp
 
 App settings store:
 
@@ -160,6 +178,7 @@ Rate-limit records store:
 - anonymized client-IP hash
 - event and ISO week
 - successful form submission timestamp
+- anonymized client-IP hashes and timestamps for cancellation attempts
 
 ## Deployment
 
@@ -182,7 +201,9 @@ Restore safety rules:
 - the backup must belong to the same event and current ISO week
 - the target list must be completely empty
 - existing rows are never deleted, replaced, or merged
-- player order, registration timestamps, roles, and Friday team assignments are preserved
+- player order, registration timestamps, roles, Friday team assignments, inactive audit state,
+  and management-token hashes are preserved
+- backups never contain raw management tokens; restored private links continue to work through their hashes
 - admin restores do not consume public submission rate limits
 
 Initial deployment flow:
@@ -211,12 +232,17 @@ Backend coverage includes:
 - role assignment
 - team generation
 - team reset
+- private-link authentication and hash-only token storage
+- confirmed-player withdrawal and waiting-list promotion
+- cancellation rate limiting and inactive admin audit visibility
+- backup restoration of management-token hashes and inactive state
 
 Frontend coverage includes:
 
 - initial dashboard rendering
 - signup form behavior
 - detailed multi-player success feedback
+- browser persistence and display of private management links
 - authoritative countdown rendering
 - offline cached-list fallback
 - Wednesday route copy and event-aware requests
@@ -239,6 +265,7 @@ Additional quick checks:
 ```bash
 python3 -m py_compile server.py
 node --check static/app.js
+node --check static/manage.js
 node --check static/teams.js
 ```
 
@@ -247,6 +274,8 @@ node --check static/teams.js
 - [server.py](server.py) - API, storage, admin logic, routing
 - [static/index.html](static/index.html) - main attendance page
 - [static/app.js](static/app.js) - main page behavior
+- [static/manage.html](static/manage.html) - private registration-management page
+- [static/manage.js](static/manage.js) - private-link loading, copying, and withdrawal behavior
 - [static/teams.html](static/teams.html) - dedicated team-builder page
 - [static/teams.js](static/teams.js) - team-builder interactions
 - [static/styles.css](static/styles.css) - shared styling

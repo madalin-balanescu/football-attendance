@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#2f66e8" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex, nofollow, noarchive" />
+    <title>Administrare înscriere</title>
+    <script>
+      (() => {
+        const storedTheme = localStorage.getItem("theme");
+        const theme = storedTheme ||
+          (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+    <link rel="manifest" href="/manifest.webmanifest?v=20260901-4" />
+    <link rel="icon" href="/app-icon.svg?v=20260901-4" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css?v=20260901-4" />
+    <link rel="stylesheet" href="/ui-enhancements.css?v=20260901-4" />
+  </head>
+  <body class="app-booting management-page">
+    <main class="page-shell management-shell">
+      <section class="hero-card management-card">
+        <p class="eyebrow">Link privat</p>
+        <h1>Administrarea înscrierii</h1>
+        <p id="management-intro" class="lead">
+          Aici poți retrage separat oricare dintre persoanele trimise prin această înscriere.
+        </p>
+
+        <div class="management-toolbar">
+          <a id="back-to-event" class="secondary-button inline-link-button" href="/">Vezi lista curentă</a>
+          <button id="copy-current-link" type="button" class="secondary-button">Copiază linkul</button>
+        </div>
+
+        <p id="management-message" class="form-message" role="status" aria-live="polite"></p>
+        <div id="management-loading" class="management-loading">Se încarcă înscrierea...</div>
+        <div id="managed-registrations" class="managed-registrations"></div>
+
+        <aside class="management-security-note">
+          Oricine are acest link poate retrage persoanele afișate. Nu îl publica și trimite-l doar
+          prietenului înscris, dacă este necesar.
+        </aside>
+      </section>
+    </main>
+    <script src="/manage.js?v=20260901-4" defer></script>
+  </body>
+</html>

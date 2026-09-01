@@ -28,11 +28,11 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="manifest" href="/manifest.webmanifest?v=20260901-1" />
-    <link rel="icon" href="/app-icon.svg?v=20260901-1" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/app-icon-192.png?v=20260901-1" />
-    <link rel="stylesheet" href="/styles.css?v=20260901-1" />
-    <link rel="stylesheet" href="/ui-enhancements.css?v=20260901-1" />
+    <link rel="manifest" href="/manifest.webmanifest?v=20260901-4" />
+    <link rel="icon" href="/app-icon.svg?v=20260901-4" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/app-icon-192.png?v=20260901-4" />
+    <link rel="stylesheet" href="/styles.css?v=20260901-4" />
+    <link rel="stylesheet" href="/ui-enhancements.css?v=20260901-4" />
   </head>
   <body class="app-booting">
     <a class="skip-link" href="#continut-principal">Sari la conținutul principal</a>
@@ -306,8 +306,23 @@
                 <strong id="success-title">Loc rezervat</strong>
                 <span id="success-summary">Înscrierea a fost trimisă cu succes.</span>
                 <ul id="success-details" class="success-details"></ul>
+                <div id="success-management-actions" class="management-link-actions hidden">
+                  <strong class="management-link-warning">Important: păstrează acest link privat</strong>
+                  <button id="copy-management-link" type="button" class="management-copy-button">
+                    Copiază linkul
+                  </button>
+                  <a id="success-management-link" class="management-link" href="/">
+                    Deschide administrarea înscrierii
+                  </a>
+                </div>
               </div>
             </div>
+
+            <section id="saved-management-panel" class="saved-management-panel hidden" aria-labelledby="saved-management-title">
+              <strong id="saved-management-title">Linkurile tale de administrare</strong>
+              <p>Sunt salvate doar în acest browser. Păstrează-le private sau trimite linkul prietenului înscris.</p>
+              <div id="saved-management-links" class="saved-management-links"></div>
+            </section>
 
             <div class="hint-box">
               Primele 18 persoane înscrise apar cu verde. Restul rămân pe lista de așteptare,
@@ -380,6 +395,6 @@
       </div>
     </div>
 
-    <script src="/app.js?v=20260901-1" defer></script>
+    <script src="/app.js?v=20260901-4" defer></script>
   </body>
 </html>

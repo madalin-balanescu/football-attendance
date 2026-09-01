@@ -1,14 +1,16 @@
 const CACHE_PREFIX = "football-attendance-";
-const CACHE_NAME = `${CACHE_PREFIX}v6`;
-const ASSET_VERSION = "20260901-1";
+const CACHE_NAME = `${CACHE_PREFIX}v9`;
+const ASSET_VERSION = "20260901-4";
 const APP_SHELL = [
   "/",
   "/miercuri",
   "/echipe",
+  "/manage.html",
   `/styles.css?v=${ASSET_VERSION}`,
   `/ui-enhancements.css?v=${ASSET_VERSION}`,
   `/app.js?v=${ASSET_VERSION}`,
   `/teams.js?v=${ASSET_VERSION}`,
+  `/manage.js?v=${ASSET_VERSION}`,
   `/manifest.webmanifest?v=${ASSET_VERSION}`,
   `/app-icon.svg?v=${ASSET_VERSION}`,
   `/app-icon-192.png?v=${ASSET_VERSION}`,
@@ -49,6 +51,12 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
+    if (url.pathname.startsWith("/inscriere/")) {
+      event.respondWith(
+        fetch(new Request(request, { cache: "no-store" })).catch(() => caches.match("/manage.html")),
+      );
+      return;
+    }
     event.respondWith(
       fetch(new Request(request, { cache: "no-store" }))
         .then((response) => {

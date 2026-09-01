@@ -58,6 +58,7 @@ class FakeElement {
     this._innerHTML = "";
     this.value = "";
     this.disabled = false;
+    this.scrollIntoViewOptions = null;
   }
 
   appendChild(child) {
@@ -72,6 +73,10 @@ class FakeElement {
 
   addEventListener(type, listener) {
     this.listeners[type] = listener;
+  }
+
+  scrollIntoView(options) {
+    this.scrollIntoViewOptions = options;
   }
 
   querySelector(selector) {
@@ -255,6 +260,11 @@ function buildAppDocument() {
   makeElement(document, "strong", "success-title");
   makeElement(document, "span", "success-summary");
   makeElement(document, "ul", "success-details");
+  makeElement(document, "div", "success-management-actions", ["hidden"]);
+  makeElement(document, "a", "success-management-link");
+  makeElement(document, "button", "copy-management-link");
+  makeElement(document, "section", "saved-management-panel", ["hidden"]);
+  makeElement(document, "div", "saved-management-links");
   makeElement(document, "section", "admin-panel", ["hidden"]);
   makeElement(document, "form", "admin-login-form");
   makeElement(document, "input", "admin-password");
@@ -359,7 +369,7 @@ function loadScript(scriptName, document, responses, options = {}) {
   const context = {
     document,
     window: {
-      location: { pathname: options.pathname || "/" },
+      location: { pathname: options.pathname || "/", origin: "https://fotbal.example" },
       matchMedia: () => ({ matches: false }),
       clearTimeout,
       setTimeout,
@@ -377,7 +387,7 @@ function loadScript(scriptName, document, responses, options = {}) {
   };
   context.globalThis = context;
   vm.runInNewContext(source, context, { filename: scriptName });
-  return { context, document, requests };
+  return { context, document, requests, storage };
 }
 
 module.exports = {
