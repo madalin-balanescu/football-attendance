@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow, noarchive" />
+    <title>Jucători eliminați / retrași</title>
+    <script>
+      try { document.documentElement.dataset.theme = localStorage.getItem("theme") || "light"; } catch {}
+    </script>
+    <link rel="icon" href="/app-icon.svg?v=20260906-4" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css?v=20260906-4" />
+    <link rel="stylesheet" href="/ui-enhancements.css?v=20260906-4" />
+  </head>
+  <body class="history-page">
+    <a class="skip-link" href="#continut-principal">Sari la istoric</a>
+    <main id="continut-principal" class="page-shell">
+      <section class="hero-card history-card" aria-labelledby="history-title">
+        <a id="history-back-link" class="secondary-button inline-link-button" href="/">Înapoi la lista curentă</a>
+        <p id="history-event" class="eyebrow">Istoric · Vineri</p>
+        <h1 id="history-title">Jucători eliminați / retrași</h1>
+        <p class="lead">Eliminări făcute de organizator și retrageri voluntare pentru meciul curent.</p>
+        <p id="history-message" class="form-message" role="status" aria-live="polite">Se încarcă istoricul...</p>
+        <div id="history-content" class="hidden">
+          <div class="history-controls">
+            <label for="history-source">Tipul eliminării
+              <select id="history-source">
+                <option value="all">Toate</option>
+                <option value="organizer">Eliminat de organizator</option>
+                <option value="self">Retragere voluntară</option>
+              </select>
+            </label>
+            <button id="history-refresh" type="button" class="secondary-button">Actualizează</button>
+          </div>
+          <p id="history-count" class="table-subtitle" aria-live="polite"></p>
+          <div class="history-table-wrap">
+            <table class="history-table">
+              <caption class="sr-only">Istoricul eliminărilor, cele mai recente primele. Orele sunt în fusul orar al României.</caption>
+              <thead><tr>
+                <th scope="col">Nume</th><th scope="col">Meci</th><th scope="col">Înscris la</th>
+                <th scope="col">Eliminat la</th><th scope="col">Tipul eliminării</th>
+              </tr></thead>
+              <tbody id="history-body"></tbody>
+            </table>
+          </div>
+          <p class="table-subtitle">Orele sunt afișate în fusul orar al României. Eliminările șterse înainte de activarea istoricului pot lipsi.</p>
+          <p class="table-subtitle">Istoricul se golește odată cu resetarea listei. Pentru miercuri, curățarea are loc duminică; pentru o săptămână nouă, istoricul pornește de la zero.</p>
+        </div>
+      </section>
+    </main>
+    <script src="/history.js?v=20260906-4" defer></script>
+  </body>
+</html>

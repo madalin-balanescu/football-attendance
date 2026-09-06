@@ -15,9 +15,10 @@ Weekly football attendance app with separate Friday and Wednesday signup lists, 
 - live countdown to the next opening or current closing time
 - adaptive layout that prioritizes signup while open and the roster while closed
 - detailed confirmation showing each submitted player's position and status
-- one private management link per submission, saved in the browser and shareable with the second player
+- one `Înscrierea ta` view combining all registrations saved in this browser
+- private submission links remain available for sharing with the players in that submission
 - per-player withdrawal with confirmation and automatic waiting-list promotion
-- inactive cancellation audit history for authenticated admins
+- a separate mobile-friendly, public removal history for the current session
 - installable PWA shell with offline UI and last-known-list fallback
 - keyboard, reduced-motion, forced-color, and screen-reader accessibility support
 - first 18 players marked as confirmed
@@ -42,7 +43,9 @@ Weekly football attendance app with separate Friday and Wednesday signup lists, 
 - `/wednesday` - alias for the Wednesday attendance page
 - `/echipe` - team builder page
 - `/teams` - alias for the team builder page
+- `/inscrierile-mele?event=friday` or `?event=wednesday` - personal registrations for the selected day (`friday` by default)
 - `/inscriere/<private-token>` - private management page created after a new submission
+- `/istoric?event=friday` or `/istoric?event=wednesday` - current-session removal history (visible to everyone)
 
 ## Tech Stack
 
@@ -98,7 +101,6 @@ Attendance page admin actions are scoped to the selected Friday or Wednesday eve
 - download the selected current-week list as JSON
 - restore that JSON into an empty list for the same event and ISO week
 - delete one row
-- review self-withdrawn registrations as inactive audit rows
 - clear the current week
 - clear all weeks for that event
 
@@ -145,9 +147,56 @@ the link but have separate `Retrage` actions. A withdrawal requires the private 
 registration ID, and explicit confirmation; names alone cannot remove a registration.
 Cancellation attempts are limited to 5 per client IP in 10 minutes.
 
-Withdrawn rows stay in the database as inactive audit records. Public ordering ignores
-inactive rows, so the first waiting player moves automatically into the first 18. Existing
-rows created before this feature have no token and remain removable only by an admin.
+The saved-links panel shows a single `Vezi înscrierea` entry. It combines players from
+saved submissions for the selected football day, with match dates and a separate withdrawal action per player.
+Both `Retrage-te` and `Vezi înscrierea` preserve Friday/Wednesday context; the return link
+opens that same day's roster. The API response determines the day of each registration,
+so outdated browser labels cannot mix players from different days.
+Existing saved links are included automatically, duplicate links/players are shown once,
+and confirmed expired links are removed. Temporary network errors keep links for retry.
+New saves no longer discard older links at a fixed ten-link limit.
+
+This grouping uses the private links in the same browser, not a name, IP address, or login.
+Each withdrawal still requires that player's original submission token. Sharing an original
+private link grants access only to that submission. The combined page URL itself contains
+no tokens and does not grant access on another browser; open the original private links
+there to add those registrations. Links already lost from browser storage cannot be
+reconstructed from player names. No new account or server-side identity is created.
+
+
+Withdrawn rows remain inactive until the list resets. Both self-withdrawals and individual
+organizer deletions write a removal record in the same database transaction. Public ordering
+ignores inactive rows, so the first waiting player moves automatically into the first 18.
+Existing rows created before private management links have no token and remain removable
+only by an admin.
+
+### Current-session removal history
+
+The small `Jucători retrași` link beside the current player list opens a separate public page.
+It shows the selected football day's current ISO week only, newest removals first, with
+name, match date, signup time, removal time, and who removed the player. A source filter
+separates organizer removals and voluntary withdrawals. Phone layouts show labeled cards.
+Everyone can view history without logging in through `/api/removal-history`. Removal, reset,
+backup, and restore controls retain their existing authorization requirements. History is
+never stored in the offline cache, so outdated removals do not remain after a session reset.
+
+The history follows the session lifecycle:
+
+- individual organizer deletion and self-withdrawal add a record; repeated attempts do not duplicate it
+- clearing the current week or all lists for an event also clears that event's corresponding history
+- Wednesday's scheduled cleanup removes that week's roster and history on Sunday, Europe/Bucharest time
+- cleanup runs when the roster, history, or public submission endpoint is requested; if no request arrives Sunday, the next week's first such request performs catch-up cleanup
+- a new ISO week starts with empty removal history for both events; old Friday rosters retain their existing storage behavior, but old removal history expires
+
+On startup, the app migrates surviving inactive self-withdrawals for the current week,
+keeping their original timestamps. Unknown timestamps display as `Necunoscut`.
+Organizer deletions and withdrawals already physically erased before this feature cannot
+be reconstructed from the remaining database. The app does not invent missing records.
+
+The current-week JSON backup includes removal history, even when no registrations remain.
+Restore validates the same event/week and preserves removal identities, so removed players
+stay removed and repeated history-only restores do not create duplicate records.
+SQLite requires version 3.35 or newer for transactional `DELETE ... RETURNING`.
 
 Admin can override this with:
 
@@ -166,7 +215,11 @@ Registrations store:
 - preferred role
 - generated team assignment
 - management-token hash (never the raw token)
-- active/inactive state and withdrawal timestamp
+- active/inactive state, withdrawal timestamp, and a stable removal key
+
+Current-session removal records store the player name, registration timestamp, event/week,
+removal timestamp (when known), and source (`organizer` or `self`). They contain no private
+management tokens or token hashes.
 
 App settings store:
 
@@ -202,7 +255,7 @@ Restore safety rules:
 - the target list must be completely empty
 - existing rows are never deleted, replaced, or merged
 - player order, registration timestamps, roles, Friday team assignments, inactive audit state,
-  and management-token hashes are preserved
+  management-token hashes, and current-session removal history are preserved
 - backups never contain raw management tokens; restored private links continue to work through their hashes
 - admin restores do not consume public submission rate limits
 
@@ -235,6 +288,9 @@ Backend coverage includes:
 - private-link authentication and hash-only token storage
 - confirmed-player withdrawal and waiting-list promotion
 - cancellation rate limiting and inactive admin audit visibility
+- transactional organizer/self removal history, migration, and rollback on history write failures
+- session expiration, manual resets, and event isolation
+- history-only backups and duplicate/conflicting removal identity validation
 - backup restoration of management-token hashes and inactive state
 
 Frontend coverage includes:
@@ -242,7 +298,8 @@ Frontend coverage includes:
 - initial dashboard rendering
 - signup form behavior
 - detailed multi-player success feedback
-- browser persistence and display of private management links
+- browser persistence and one combined entry for saved private management links
+- multiple-submission aggregation, token-scoped withdrawal, deduplication, expired-link cleanup, and partial-failure retry
 - authoritative countdown rendering
 - offline cached-list fallback
 - Wednesday route copy and event-aware requests
@@ -252,6 +309,7 @@ Frontend coverage includes:
 - manifest and service-worker app-shell validation
 - team-builder rendering
 - team generation refresh behavior
+- separate removal-history navigation, source filtering, escaped names, empty state, public access, and offline behavior
 
 Run everything:
 
@@ -267,6 +325,8 @@ python3 -m py_compile server.py
 node --check static/app.js
 node --check static/manage.js
 node --check static/teams.js
+node --check static/history.js
+node --check static/service-worker.js
 ```
 
 ## Project Structure
@@ -276,6 +336,7 @@ node --check static/teams.js
 - [static/app.js](static/app.js) - main page behavior
 - [static/manage.html](static/manage.html) - private registration-management page
 - [static/manage.js](static/manage.js) - private-link loading, copying, and withdrawal behavior
+- [static/history.html](static/history.html) and [static/history.js](static/history.js) - public current-session removal history
 - [static/teams.html](static/teams.html) - dedicated team-builder page
 - [static/teams.js](static/teams.js) - team-builder interactions
 - [static/styles.css](static/styles.css) - shared styling

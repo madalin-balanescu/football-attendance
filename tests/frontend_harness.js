@@ -265,6 +265,7 @@ function buildAppDocument() {
   makeElement(document, "button", "copy-management-link");
   makeElement(document, "section", "saved-management-panel", ["hidden"]);
   makeElement(document, "div", "saved-management-links");
+  makeElement(document, "a", "withdraw-shortcut");
   makeElement(document, "section", "admin-panel", ["hidden"]);
   makeElement(document, "form", "admin-login-form");
   makeElement(document, "input", "admin-password");
@@ -274,6 +275,7 @@ function buildAppDocument() {
   makeElement(document, "button", "toggle-placeholder-button");
   makeElement(document, "button", "auto-mode-button");
   makeElement(document, "a", "backup-week-link");
+  makeElement(document, "a", "removal-history-link");
   makeElement(document, "input", "restore-week-input");
   makeElement(document, "button", "restore-week-button");
   makeElement(document, "button", "clear-week-button");
@@ -292,6 +294,23 @@ function buildAppDocument() {
     document.getElementById("person1").value = "";
     document.getElementById("person2").value = "";
   };
+  return document;
+}
+
+function buildManagementDocument() {
+  const document = new FakeDocument();
+  ["managed-registrations", "management-loading", "management-message", "management-intro", "back-to-event", "management-title", "management-kicker", "management-security-note"].forEach((id) => makeElement(document, "div", id));
+  makeElement(document, "button", "copy-current-link");
+  makeElement(document, "button", "refresh-management");
+  return document;
+}
+
+function buildHistoryDocument() {
+  const document = new FakeDocument();
+  ["history-content", "history-body", "history-message", "history-count", "history-event", "history-back-link"].forEach((id) => makeElement(document, "div", id));
+  const source = makeElement(document, "select", "history-source");
+  source.value = "all";
+  makeElement(document, "button", "history-refresh");
   return document;
 }
 
@@ -364,12 +383,15 @@ async function flush() {
 function loadScript(scriptName, document, responses, options = {}) {
   const scriptPath = path.join(__dirname, "..", "static", scriptName);
   const source = fs.readFileSync(scriptPath, "utf8");
-  const storage = new Map();
+  const storage = new Map(Object.entries(options.storage || {}));
   const requests = [];
   const context = {
     document,
     window: {
-      location: { pathname: options.pathname || "/", origin: "https://fotbal.example" },
+      location: { pathname: options.pathname || "/", search: options.search || "", origin: "https://fotbal.example" },
+      listeners: {},
+      addEventListener(type, listener) { this.listeners[type] = listener; },
+      confirm: () => options.confirm !== false,
       matchMedia: () => ({ matches: false }),
       clearTimeout,
       setTimeout,
@@ -381,6 +403,7 @@ function loadScript(scriptName, document, responses, options = {}) {
     fetch: createFetchMock([...responses], requests),
     console,
     JSON,
+    URLSearchParams,
     Promise,
     setTimeout,
     clearTimeout,
@@ -393,6 +416,8 @@ function loadScript(scriptName, document, responses, options = {}) {
 module.exports = {
   buildAppDocument,
   buildTeamsDocument,
+  buildHistoryDocument,
+  buildManagementDocument,
   flush,
   loadScript,
 };

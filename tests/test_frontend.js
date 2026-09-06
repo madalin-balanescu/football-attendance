@@ -520,3 +520,182 @@ test("teams.js shows role selectors for authenticated admin and can refresh gene
   assert.equal(document.getElementById("builder-state-title").textContent, "Echipe gata");
   assert.equal(document.getElementById("builder-state-badge").textContent, "Generat");
 });
+
+const { buildHistoryDocument } = require("./frontend_harness");
+const removalPayload = {
+  eventKey: "friday", weekLabel: "04 Sep 2026",
+  removalHistory: [
+    { id: "a", name: "<img src=x onerror=alert(1)>", weekKey: "2026-W36", weekLabel: "04 Sep 2026", createdAt: "2026-09-03 12:00:00", removedAt: "2026-09-04 15:00:00", source: "organizer", sourceLabel: "Eliminat de organizator" },
+    { id: "b", name: "Self target", weekKey: "2026-W36", weekLabel: "04 Sep 2026", createdAt: "2026-09-03 13:00:00", removedAt: null, source: "self", sourceLabel: "Retragere voluntară" },
+  ],
+};
+
+test("history page displays both removal types, filters, and renders names as text", async () => {
+  const document = buildHistoryDocument();
+  const { context, storage, requests } = loadScript("history.js", document, [{ body: removalPayload }]);
+  await flush();
+  assert.equal(requests[0].url, "/api/removal-history?event=friday");
+  assert.equal(requests[0].options.cache, "no-store");
+  assert.equal(document.getElementById("history-body").children.length, 2);
+  const firstCell = document.getElementById("history-body").children[0].children[0];
+  assert.equal(firstCell.children[1].textContent, removalPayload.removalHistory[0].name);
+  assert.equal(firstCell.querySelector("img"), null);
+  assert.equal(document.getElementById("history-body").children[1].children[3].children[1].textContent, "Necunoscut");
+  document.getElementById("history-source").value = "self";
+  context.renderHistory();
+  assert.equal(document.getElementById("history-body").children.length, 1);
+  assert.equal(document.getElementById("history-count").textContent, "1 din 2 eliminări");
+  assert.equal(storage.size, 0);
+});
+
+test("history page scopes navigation to Wednesday and clears stale data on a server error", async () => {
+  const document = buildHistoryDocument();
+  const { context, requests } = loadScript("history.js", document, [
+    { body: removalPayload },
+    { ok: false, status: 503, body: { error: "Istoricul nu este disponibil momentan" } },
+  ], { search: "?event=wednesday" });
+  await flush();
+  assert.equal(requests[0].url, "/api/removal-history?event=wednesday");
+  assert.equal(document.getElementById("history-back-link").getAttribute("href"), "/miercuri");
+  await context.loadHistory();
+  assert.equal(document.getElementById("history-body").children.length, 0);
+  assert.equal(document.getElementById("history-content").classList.contains("hidden"), true);
+  assert.equal(document.getElementById("history-message").textContent, "Istoricul nu este disponibil momentan");
+});
+
+test("history page clears data offline and presents an empty session after reset", async () => {
+  const document = buildHistoryDocument();
+  const { context } = loadScript("history.js", document, [
+    { body: removalPayload },
+    { body: { ...removalPayload, removalHistory: [] } },
+  ]);
+  await flush();
+  context.window.listeners.offline();
+  assert.equal(document.getElementById("history-body").children.length, 0);
+  await context.loadHistory();
+  assert.equal(document.getElementById("history-count").textContent, "0 din 0 eliminări");
+  assert.match(document.getElementById("history-body").textContent, /Nu există eliminări/);
+});
+
+test("attendance page has a separate event-aware history link and caches no removal data", async () => {
+  const document = buildAppDocument();
+  const { storage } = loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: false } },
+    { body: appPayload({ inactiveRegistrations: [{ name: "Withdrawn", status: "withdrawn" }], removalHistory: removalPayload.removalHistory }) },
+  ], { pathname: "/miercuri" });
+  await flush();
+  assert.equal(document.getElementById("removal-history-link").getAttribute("href"), "/istoric?event=wednesday");
+  assert.equal(document.getElementById("attendance-table-body").children.length, 1);
+  const cached = JSON.parse(storage.get("football-attendance:wednesday"));
+  assert.equal("removalHistory" in cached, false);
+  assert.equal("inactiveRegistrations" in cached, false);
+});
+
+const { buildManagementDocument } = require("./frontend_harness");
+const savedLinksKey = "football-attendance:management-links";
+const tokenA = "a".repeat(43);
+const tokenB = "b".repeat(43);
+function savedLinks(tokens) {
+  return { [savedLinksKey]: JSON.stringify(tokens.map(token => ({ path: `/inscriere/${token}`, eventKey: "friday" }))) };
+}
+function managedPayload(ids, overrides = {}) {
+  return {
+    eventKey: "friday", weekKey: "2026-W36", weekLabel: "04 Sep 2026",
+    registrations: ids.map(id => ({ id, name: `Player ${id}`, active: true, status: "confirmed", position: id })),
+    ...overrides,
+  };
+}
+
+test("saved submissions appear as one personal-player link and are not truncated", async () => {
+  const tokens = Array.from({ length: 12 }, (_, i) => String.fromCharCode(65 + i).repeat(43));
+  const document = buildAppDocument();
+  const { context, storage } = loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: false } }, { body: appPayload() },
+  ], { storage: savedLinks(tokens) });
+  await flush();
+  assert.equal(document.getElementById("saved-management-links").children.length, 1);
+  assert.equal(document.getElementById("saved-management-links").children[0].getAttribute("href"), "/inscrierile-mele?event=friday");
+  context.saveManagementLink(`/inscriere/${tokenA}`);
+  assert.equal(JSON.parse(storage.get(savedLinksKey)).length, 13);
+  assert.equal(document.getElementById("saved-management-links").children.length, 1);
+});
+
+for (const event of ["friday", "wednesday"]) {
+  test(`combined management isolates ${event} using server data and returns to its list`, async () => {
+    const document = buildManagementDocument();
+    const { requests, storage } = loadScript("manage.js", document, [
+      { body: managedPayload([1, 2]) },
+      { body: managedPayload([3], { eventKey: "wednesday", weekLabel: "02 Sep 2026" }) },
+    ], { pathname: "/inscrierile-mele", search: `?event=${event}`, storage: savedLinks([tokenA, tokenA, tokenB]) });
+    await flush();
+    assert.equal(requests.length, 2);
+    assert.deepEqual(requests.map(r => r.options.headers.Authorization), [`Bearer ${tokenA}`, `Bearer ${tokenB}`]);
+    assert.equal(document.getElementById("managed-registrations").children.length, event === "friday" ? 2 : 1);
+    assert.equal(document.getElementById("back-to-event").getAttribute("href"), event === "friday" ? "/" : "/miercuri");
+    assert.equal(document.getElementById("managed-registrations").textContent.includes("Player 3"), event === "wednesday");
+    assert.equal(JSON.parse(storage.get(savedLinksKey)).length, 3);
+  });
+
+  test(`attendance shortcuts carry ${event} into the personal list`, async () => {
+    const document = buildAppDocument();
+    const stored = savedLinks([tokenA, tokenB]);
+    stored[savedLinksKey] = JSON.stringify([{ path: `/inscriere/${tokenA}`, eventKey: "friday" }, { path: `/inscriere/${tokenB}`, eventKey: "wednesday" }]);
+    loadScript("app.js", document, [{ body: { enabled: true, authenticated: false } }, { body: appPayload() }], {
+      pathname: event === "wednesday" ? "/miercuri" : "/", storage: stored,
+    });
+    await flush();
+    assert.equal(document.getElementById("withdraw-shortcut").getAttribute("href"), `/inscrierile-mele?event=${event}`);
+    assert.equal(document.getElementById("saved-management-links").children[0].getAttribute("href"), `/inscrierile-mele?event=${event}`);
+  });
+}
+
+test("combined withdrawal uses the selected player's token and refreshes every submission", async () => {
+  const document = buildManagementDocument();
+  const withdrawn = managedPayload([2], { registrations: [{ id: 2, name: "Player 2", active: false, status: "withdrawn", position: null }], message: "Retragere salvată" });
+  const { requests } = loadScript("manage.js", document, [
+    { body: managedPayload([1]) }, { body: managedPayload([2]) },
+    { body: withdrawn }, { body: managedPayload([1]) }, { body: withdrawn },
+  ], { pathname: "/inscrierile-mele", storage: savedLinks([tokenA, tokenB]) });
+  await flush();
+  const button = document.getElementById("managed-registrations").children[1].querySelector("button");
+  await button.listeners.click();
+  assert.equal(requests[2].url, "/api/management/withdraw");
+  assert.equal(requests[2].options.headers.Authorization, `Bearer ${tokenB}`);
+  assert.deepEqual(JSON.parse(requests[2].options.body), { registrationId: 2, confirmed: true });
+  assert.equal(requests.length, 5);
+  assert.equal(document.getElementById("managed-registrations").children.length, 2);
+  assert.equal(document.getElementById("managed-registrations").children[1].querySelector("button"), null);
+});
+
+test("combined management drops expired links but keeps failed links and usable players", async () => {
+  const tokenC = "c".repeat(43);
+  const document = buildManagementDocument();
+  const { storage } = loadScript("manage.js", document, [
+    { body: managedPayload([1]) }, { ok: false, status: 404 }, { error: new Error("Offline") },
+  ], { pathname: "/inscrierile-mele", storage: savedLinks([tokenA, tokenB, tokenC]) });
+  await flush();
+  assert.equal(document.getElementById("managed-registrations").children.length, 1);
+  assert.deepEqual(JSON.parse(storage.get(savedLinksKey)).map(entry => entry.path), [`/inscriere/${tokenA}`, `/inscriere/${tokenC}`]);
+  assert.match(document.getElementById("management-message").textContent, /Unele înscrieri/);
+});
+
+test("opening a shared link still exposes only its submission", async () => {
+  const document = buildManagementDocument();
+  const { requests } = loadScript("manage.js", document, [{ body: managedPayload([1]) }], {
+    pathname: `/inscriere/${tokenA}`, storage: savedLinks([tokenA, tokenB]),
+  });
+  await flush();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].options.headers.Authorization, `Bearer ${tokenA}`);
+  assert.equal(document.getElementById("managed-registrations").children.length, 1);
+  assert.equal(document.getElementById("copy-current-link").classList.contains("hidden"), false);
+});
+
+test("combined page without saved links shows an empty personal list without fetching other players", async () => {
+  const document = buildManagementDocument();
+  const { requests } = loadScript("manage.js", document, [], { pathname: "/inscrierile-mele" });
+  await flush();
+  assert.equal(requests.length, 0);
+  assert.match(document.getElementById("management-message").textContent, /Nu ai înscrieri/);
+  assert.equal(document.body.classList.contains("app-booting"), false);
+});

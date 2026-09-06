@@ -13,7 +13,7 @@ import sys
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections import defaultdict
 from http.cookies import SimpleCookie
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta
 from hashlib import sha256
 from http import HTTPStatus
@@ -75,6 +75,11 @@ ROMANIAN_MONTHS = (
 )
 STATIC_CACHE_SUFFIXES = {".css", ".js", ".svg", ".png", ".webmanifest"}
 MANAGEMENT_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43,128}$")
+REMOVAL_COLUMNS = "id, submitted_name, created_at, week_key, event_key, is_active, cancelled_at, removal_key"
+REMOVAL_LABELS = {
+    "organizer": "Eliminat de organizator",
+    "self": "Retragere voluntară",
+}
 
 
 class RestoreTargetNotEmptyError(Exception):
@@ -270,12 +275,35 @@ def ensure_database() -> None:
             )
             connection.commit()
 
+    with get_connection() as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS registration_removals (
+                removal_key TEXT PRIMARY KEY,
+                submitted_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                week_key TEXT NOT NULL,
+                event_key TEXT NOT NULL,
+                removed_at TEXT,
+                removal_source TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_removals_event_time
+            ON registration_removals (event_key, removed_at, removal_key)
+            """
+        )
+        archive_inactive_registrations(connection)
+
     set_setting("signup_mode", "auto", only_if_missing=True)
     set_setting("signup_mode_wednesday", "auto", only_if_missing=True)
 
 
 def ensure_registration_columns(connection) -> None:
     if using_postgres():
+        connection.execute("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS removal_key TEXT")
         connection.execute(
             """
             ALTER TABLE registrations
@@ -318,6 +346,8 @@ def ensure_registration_columns(connection) -> None:
         row[1]
         for row in connection.execute("PRAGMA table_info(registrations)").fetchall()
     }
+    if "removal_key" not in existing_columns:
+        connection.execute("ALTER TABLE registrations ADD COLUMN removal_key TEXT")
     if "preferred_role" not in existing_columns:
         connection.execute(
             """
@@ -360,6 +390,114 @@ def ensure_registration_columns(connection) -> None:
             ADD COLUMN cancelled_at TEXT
             """
         )
+
+
+def legacy_removal_key(registration_id, name, created_at, week_key, event_key, cancelled_at) -> str:
+    identity = [registration_id, name, format_database_datetime(created_at), week_key, event_key, format_database_datetime(cancelled_at)]
+    return sha256(json.dumps(identity, ensure_ascii=False).encode("utf-8")).hexdigest()[:32]
+
+
+def archive_removed_row(connection, row, source: str, removed_at: datetime) -> str:
+    removal_key = row[7] or (
+        secrets.token_hex(16) if row[5]
+        else legacy_removal_key(row[0], row[1], row[2], row[3], row[4], row[6])
+    )
+    insert_removal_history(connection, [(
+        removal_key, row[1], format_database_datetime(row[2]), row[3], row[4],
+        format_database_datetime(removed_at if row[5] else row[6]),
+        source if row[5] else "self",
+    )])
+    return removal_key
+
+
+def archive_inactive_registrations(connection) -> None:
+    placeholder = "%s" if using_postgres() else "?"
+    lock = " FOR UPDATE" if using_postgres() else ""
+    rows = connection.execute(
+        f"SELECT {REMOVAL_COLUMNS} FROM registrations WHERE is_active = FALSE AND week_key = {placeholder}{lock}",
+        (current_week_key(),)
+    ).fetchall()
+    for row in rows:
+        key = archive_removed_row(connection, row, "self", datetime.now(APP_TIMEZONE))
+        connection.execute(
+            f"UPDATE registrations SET removal_key = {placeholder} WHERE id = {placeholder}",
+            (key, row[0]),
+        )
+
+
+def fetch_removal_history(
+    event_key: str = FRIDAY_EVENT,
+    week_key: str | None = None,
+    connection=None,
+) -> list[dict[str, object]]:
+    placeholder = "%s" if using_postgres() else "?"
+    with (get_connection() if connection is None else nullcontext(connection)) as connection:
+        rows = connection.execute(
+            f"""
+            SELECT removal_key, submitted_name, created_at, week_key, removed_at, removal_source
+            FROM registration_removals WHERE event_key = {placeholder} AND week_key = {placeholder}
+            ORDER BY CASE WHEN removed_at IS NULL THEN 1 ELSE 0 END, removed_at DESC, removal_key DESC
+            """,
+            (normalize_event(event_key), week_key or current_week_key()),
+        ).fetchall()
+    return [
+        {
+            "id": row[0], "name": row[1], "createdAt": row[2], "weekKey": row[3],
+            "weekLabel": week_label_from_key(row[3], event_key),
+            "removedAt": row[4], "source": row[5], "sourceLabel": REMOVAL_LABELS[row[5]],
+        }
+        for row in rows
+    ]
+
+
+def parse_removal_history(payload: dict[str, object], event_key: str, week_key: str) -> list[tuple]:
+    entries = payload.get("removalHistory", [])
+    if not isinstance(entries, list):
+        raise ValueError("Backupul nu conține un istoric valid.")
+    validated = []
+    keys = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("Backupul conține o eliminare invalidă.")
+        key = entry.get("id")
+        name = entry.get("name")
+        week = entry.get("weekKey")
+        if (
+            not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{32}", key)
+            or key in keys or not isinstance(name, str) or not name.strip() or len(name) > 80
+            or week != week_key
+            or entry.get("source") not in REMOVAL_LABELS
+        ):
+            raise ValueError("Backupul conține o eliminare invalidă.")
+        keys.add(key)
+        try:
+            datetime.fromisocalendar(int(week[:4]), int(week[-2:]), 1)
+            datetime.strptime(entry["createdAt"], "%Y-%m-%d %H:%M:%S")
+            if entry.get("removedAt") is not None:
+                datetime.strptime(entry["removedAt"], "%Y-%m-%d %H:%M:%S")
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("Backupul conține o dată invalidă.") from error
+        validated.append((key, name, entry["createdAt"], week, event_key, entry.get("removedAt"), entry["source"]))
+    return validated
+
+
+def insert_removal_history(connection, rows: list[tuple]) -> None:
+    placeholder = "%s" if using_postgres() else "?"
+    for row in rows:
+        inserted = connection.execute(
+            f"""INSERT INTO registration_removals
+                (removal_key, submitted_name, created_at, week_key, event_key, removed_at, removal_source)
+                VALUES ({', '.join([placeholder] * 7)})
+                ON CONFLICT (removal_key) DO NOTHING""",
+            row,
+        ).rowcount
+        if not inserted:
+            existing = connection.execute(
+                f"SELECT removal_key, submitted_name, created_at, week_key, event_key, removed_at, removal_source FROM registration_removals WHERE removal_key = {placeholder}",
+                (row[0],),
+            ).fetchone()
+            if tuple(existing) != row:
+                raise ValueError("Backupul intră în conflict cu o eliminare deja salvată. Nu s-a importat nimic.")
 
 
 def get_setting(setting_key: str, default: str = "") -> str:
@@ -748,14 +886,15 @@ def format_database_datetime(value: object) -> str | None:
 def fetch_registration_backup_rows(
     week_key: str,
     event_key: str = FRIDAY_EVENT,
+    connection=None,
 ) -> list[dict[str, object]]:
     event_key = normalize_event(event_key)
-    with get_connection() as connection:
+    with (get_connection() if connection is None else nullcontext(connection)) as connection:
         if using_postgres():
             rows = connection.execute(
                 """
                 SELECT id, submitted_name, created_at, preferred_role, assigned_team,
-                       management_token_hash, is_active, cancelled_at
+                       management_token_hash, is_active, cancelled_at, removal_key
                 FROM registrations
                 WHERE week_key = %s AND event_key = %s
                 ORDER BY created_at ASC, id ASC
@@ -767,7 +906,7 @@ def fetch_registration_backup_rows(
             rows = connection.execute(
                 """
                 SELECT id, submitted_name, created_at, preferred_role, assigned_team,
-                       management_token_hash, is_active, cancelled_at
+                       management_token_hash, is_active, cancelled_at, removal_key
                 FROM registrations
                 WHERE week_key = ? AND event_key = ?
                 ORDER BY datetime(created_at) ASC, id ASC
@@ -800,6 +939,7 @@ def fetch_registration_backup_rows(
                 "roleLabel": ROLE_LABELS[role],
                 "team": row[4] if using_postgres() else row["assigned_team"],
                 "managementTokenHash": token_hash,
+                "removalKey": row[8] if using_postgres() else row["removal_key"],
                 "active": active,
                 "cancelledAt": format_database_datetime(
                     row[7] if using_postgres() else row["cancelled_at"]
@@ -814,13 +954,20 @@ def build_registration_backup(
     event_key: str = FRIDAY_EVENT,
 ) -> dict[str, object]:
     event_key = normalize_event(event_key)
+    with get_connection() as connection:
+        connection.execute(
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ" if using_postgres() else "BEGIN"
+        )
+        registrations = fetch_registration_backup_rows(week_key, event_key, connection)
+        removals = fetch_removal_history(event_key, week_key, connection)
     return {
         "backupVersion": 1,
         "eventKey": event_key,
         "weekKey": week_key,
         "weekLabel": week_label_from_key(week_key, event_key),
         "exportedAt": datetime.now(APP_TIMEZONE).isoformat(),
-        "registrations": fetch_registration_backup_rows(week_key, event_key),
+        "registrations": registrations,
+        "removalHistory": removals,
     }
 
 
@@ -841,12 +988,13 @@ def parse_registration_backup(
         raise ValueError("Backupul nu aparține săptămânii curente.")
 
     raw_registrations = payload.get("registrations")
-    if not isinstance(raw_registrations, list) or not raw_registrations:
+    if not isinstance(raw_registrations, list) or (not raw_registrations and not payload.get("removalHistory")):
         raise ValueError("Fișierul de backup nu conține înscrieri.")
     if len(raw_registrations) > 200:
         raise ValueError("Fișierul de backup conține prea multe înscrieri.")
 
     registrations: list[dict[str, object]] = []
+    removal_keys = set()
     previous_created_at: datetime | None = None
     for expected_position, raw_registration in enumerate(raw_registrations, start=1):
         if not isinstance(raw_registration, dict):
@@ -903,11 +1051,26 @@ def parse_registration_backup(
                 raise ValueError("Backupul conține o dată de retragere invalidă.") from error
         if active and cancelled_at is not None:
             raise ValueError("Backupul conține o stare de retragere inconsistentă.")
-        if not active and cancelled_at is None:
-            raise ValueError("Backupul nu conține data unei retrageri.")
+        removal_key = raw_registration.get("removalKey")
+        if removal_key is not None and (
+            not isinstance(removal_key, str) or not re.fullmatch(r"[0-9a-f]{32}", removal_key)
+        ):
+            raise ValueError("Backupul conține un identificator de retragere invalid.")
+        if active and removal_key is not None:
+            raise ValueError("Backupul conține o stare de retragere inconsistentă.")
+        if not active and removal_key is None:
+            removal_key = legacy_removal_key(
+                raw_registration.get("id", expected_position), name, created_at,
+                expected_week_key, raw_event_key, cancelled_at,
+            )
+        if removal_key is not None:
+            if removal_key in removal_keys:
+                raise ValueError("Backupul conține identificatori de retragere duplicați.")
+            removal_keys.add(removal_key)
 
         registrations.append(
             {
+                "removalKey": removal_key,
                 "name": name,
                 "createdAt": created_at,
                 "role": role,
@@ -925,6 +1088,7 @@ def restore_registration_backup(
     registrations: list[dict[str, object]],
     week_key: str,
     event_key: str,
+    removal_history: list[tuple] | None = None,
 ) -> int:
     event_key = normalize_event(event_key)
     with get_connection() as connection:
@@ -958,9 +1122,10 @@ def restore_registration_backup(
                         assigned_team,
                         management_token_hash,
                         is_active,
-                        cancelled_at
+                        cancelled_at,
+                        removal_key
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         registration["name"],
@@ -972,6 +1137,7 @@ def restore_registration_backup(
                         registration["managementTokenHash"],
                         registration["active"],
                         registration["cancelledAt"],
+                        registration.get("removalKey"),
                     ),
                 )
             else:
@@ -986,9 +1152,10 @@ def restore_registration_backup(
                         assigned_team,
                         management_token_hash,
                         is_active,
-                        cancelled_at
+                        cancelled_at,
+                        removal_key
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         registration["name"],
@@ -1004,8 +1171,11 @@ def restore_registration_backup(
                             if registration["cancelledAt"] is not None
                             else None
                         ),
+                        registration.get("removalKey"),
                     ),
                 )
+        insert_removal_history(connection, removal_history or [])
+        archive_inactive_registrations(connection)
 
     return len(registrations)
 
@@ -1313,6 +1483,17 @@ def withdraw_managed_registration(
                     token_hash,
                 ),
             ).rowcount
+        if updated:
+            placeholder = "%s" if using_postgres() else "?"
+            row = connection.execute(
+                f"SELECT {REMOVAL_COLUMNS} FROM registrations WHERE id = {placeholder}",
+                (registration_id,),
+            ).fetchone()
+            key = archive_removed_row(connection, row, "self", cancelled_at)
+            connection.execute(
+                f"UPDATE registrations SET removal_key = {placeholder} WHERE id = {placeholder}",
+                (key, registration_id),
+            )
     return updated
 
 
@@ -1485,49 +1666,35 @@ def build_team_payload(registrations: list[dict[str, object]]) -> list[dict[str,
     return [grouped[index] for index in range(1, TEAM_COUNT + 1) if grouped[index]["players"]]
 
 
+def remove_registration_rows(where: str, parameters: tuple, source: str, now: datetime | None = None) -> int:
+    removed_at = (now or datetime.now(APP_TIMEZONE)).replace(microsecond=0, tzinfo=None)
+    with get_connection() as connection:
+        rows = connection.execute(
+            f"DELETE FROM registrations WHERE {where} RETURNING {REMOVAL_COLUMNS}",
+            parameters,
+        ).fetchall()
+        for row in rows:
+            archive_removed_row(connection, row, source, removed_at)
+    return len(rows)
+
+
 def delete_registrations(
     week_key: str | None = None,
     event_key: str | None = None,
 ) -> int:
-    normalized_event = normalize_event(event_key) if event_key is not None else None
+    placeholder = "%s" if using_postgres() else "?"
+    clauses = []
+    parameters = []
+    if week_key is not None:
+        clauses.append(f"week_key = {placeholder}")
+        parameters.append(week_key)
+    if event_key is not None:
+        clauses.append(f"event_key = {placeholder}")
+        parameters.append(normalize_event(event_key))
+    where = " AND ".join(clauses) or "1 = 1"
     with get_connection() as connection:
-        if using_postgres():
-            if week_key is None and normalized_event is None:
-                deleted = connection.execute("DELETE FROM registrations").rowcount
-            elif week_key is None:
-                deleted = connection.execute(
-                    "DELETE FROM registrations WHERE event_key = %s",
-                    (normalized_event,),
-                ).rowcount
-            elif normalized_event is None:
-                deleted = connection.execute(
-                    "DELETE FROM registrations WHERE week_key = %s",
-                    (week_key,),
-                ).rowcount
-            else:
-                deleted = connection.execute(
-                    "DELETE FROM registrations WHERE week_key = %s AND event_key = %s",
-                    (week_key, normalized_event),
-                ).rowcount
-        else:
-            if week_key is None and normalized_event is None:
-                deleted = connection.execute("DELETE FROM registrations").rowcount
-            elif week_key is None:
-                deleted = connection.execute(
-                    "DELETE FROM registrations WHERE event_key = ?",
-                    (normalized_event,),
-                ).rowcount
-            elif normalized_event is None:
-                deleted = connection.execute(
-                    "DELETE FROM registrations WHERE week_key = ?",
-                    (week_key,),
-                ).rowcount
-            else:
-                deleted = connection.execute(
-                    "DELETE FROM registrations WHERE week_key = ? AND event_key = ?",
-                    (week_key, normalized_event),
-                ).rowcount
-            connection.commit()
+        deleted = connection.execute(f"DELETE FROM registrations WHERE {where}", tuple(parameters)).rowcount
+        connection.execute(f"DELETE FROM registration_removals WHERE {where}", tuple(parameters))
     return deleted
 
 
@@ -1535,20 +1702,12 @@ def delete_registration_by_id(
     registration_id: int,
     event_key: str = FRIDAY_EVENT,
 ) -> int:
-    event_key = normalize_event(event_key)
-    with get_connection() as connection:
-        if using_postgres():
-            deleted = connection.execute(
-                "DELETE FROM registrations WHERE id = %s AND event_key = %s",
-                (registration_id, event_key),
-            ).rowcount
-        else:
-            deleted = connection.execute(
-                "DELETE FROM registrations WHERE id = ? AND event_key = ?",
-                (registration_id, event_key),
-            ).rowcount
-            connection.commit()
-    return deleted
+    placeholder = "%s" if using_postgres() else "?"
+    return remove_registration_rows(
+        f"id = {placeholder} AND event_key = {placeholder}",
+        (registration_id, normalize_event(event_key)),
+        "organizer",
+    )
 
 
 def cleanup_wednesday_registrations(now: datetime | None = None) -> int:
@@ -1556,13 +1715,16 @@ def cleanup_wednesday_registrations(now: datetime | None = None) -> int:
     week_key = current_week_key(moment)
     include_current_week = moment.isoweekday() == 7
     operator = "<=" if include_current_week else "<"
-
+    placeholder = "%s" if using_postgres() else "?"
     with get_connection() as connection:
-        placeholder = "%s" if using_postgres() else "?"
         deleted = connection.execute(
             f"DELETE FROM registrations WHERE event_key = {placeholder} AND week_key {operator} {placeholder}",
             (WEDNESDAY_EVENT, week_key),
         ).rowcount
+        connection.execute(
+            f"DELETE FROM registration_removals WHERE week_key < {placeholder} OR (event_key = {placeholder} AND week_key {operator} {placeholder})",
+            (week_key, WEDNESDAY_EVENT, week_key),
+        )
     return deleted
 
 
@@ -1659,6 +1821,12 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/removal-history":
+            self.handle_removal_history(event_from_query(parsed.query))
+            return
+        if parsed.path in {"/istoric", "/istoric/"}:
+            self.path = "/history.html"
+            return super().do_GET()
         if parsed.path == "/api/registrations":
             cleanup_wednesday_registrations()
             params = parse_qs(parsed.query)
@@ -1691,7 +1859,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
         if parsed.path in {"/echipe", "/teams"}:
             self.path = "/teams.html"
             return super().do_GET()
-        if re.fullmatch(r"/inscriere/[A-Za-z0-9_-]{43,128}/?", parsed.path):
+        if parsed.path in {"/inscrierile-mele", "/inscrierile-mele/"} or re.fullmatch(r"/inscriere/[A-Za-z0-9_-]{43,128}/?", parsed.path):
             self.path = "/manage.html"
             return super().do_GET()
         if parsed.path in {"/", "/miercuri", "/miercuri/", "/wednesday", "/wednesday/"}:
@@ -1964,6 +2132,14 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
         })
         self.send_json(response)
 
+    def handle_removal_history(self, event_key: str) -> None:
+        cleanup_wednesday_registrations()
+        self.send_json({
+            "eventKey": event_key,
+            "weekLabel": week_label_from_key(current_week_key(), event_key),
+            "removalHistory": fetch_removal_history(event_key),
+        })
+
     def handle_admin_backup_week(self, event_key: str = FRIDAY_EVENT) -> None:
         if not ADMIN_PASSWORD:
             self.send_json(
@@ -2016,7 +2192,8 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
                 active_week,
                 expected_event_key,
             )
-            restored = restore_registration_backup(registrations, active_week, event_key)
+            removal_history = parse_removal_history(payload, event_key, active_week)
+            restored = restore_registration_backup(registrations, active_week, event_key, removal_history)
         except ValueError as error:
             self.send_json({"error": str(error)}, status=HTTPStatus.BAD_REQUEST)
             return

@@ -25,7 +25,7 @@ class IdCollector(HTMLParser):
 
 class FrontendContractTestCase(unittest.TestCase):
     def test_pages_have_unique_ids_and_accessibility_landmarks(self) -> None:
-        for filename in ("index.html", "teams.html"):
+        for filename in ("index.html", "teams.html", "history.html"):
             with self.subTest(filename=filename):
                 source = (STATIC_DIR / filename).read_text(encoding="utf-8")
                 parser = IdCollector()
@@ -82,14 +82,14 @@ class FrontendContractTestCase(unittest.TestCase):
         app_script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
         self.assertIn("navigator.serviceWorker.controller", app_script)
         self.assertIn('addEventListener("controllerchange"', app_script)
-        self.assertIn('/styles.css?v=20260901-4', attendance_page)
-        self.assertIn('/app.js?v=20260901-4', attendance_page)
+        self.assertIn('/styles.css?v=20260906-4', attendance_page)
+        self.assertIn('/app.js?v=20260906-4', attendance_page)
 
         shell_match = re.search(r"const APP_SHELL = \[(.*?)\];", worker, re.DOTALL)
         self.assertIsNotNone(shell_match)
         shell_paths = re.findall(r'["`](/[^"`]+)["`]', shell_match.group(1))
         for asset_path in shell_paths:
-            if asset_path in {"/", "/miercuri", "/echipe"}:
+            if asset_path in {"/", "/miercuri", "/echipe", "/inscrierile-mele"}:
                 continue
             with self.subTest(asset=asset_path):
                 asset_filename = asset_path.split("?", 1)[0].lstrip("/")
