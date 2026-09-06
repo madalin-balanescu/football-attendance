@@ -45,6 +45,7 @@ const successManagementLink = document.getElementById("success-management-link")
 const copyManagementLinkButton = document.getElementById("copy-management-link");
 const savedManagementPanel = document.getElementById("saved-management-panel");
 const savedManagementLinks = document.getElementById("saved-management-links");
+const withdrawShortcut = document.getElementById("withdraw-shortcut");
 const adminPanel = document.getElementById("admin-panel");
 const adminLoginForm = document.getElementById("admin-login-form");
 const adminPasswordInput = document.getElementById("admin-password");
@@ -64,6 +65,7 @@ const adminActionsHeader = document.getElementById("admin-actions-header");
 const adminToggle = document.getElementById("admin-toggle");
 const adminContent = document.getElementById("admin-content");
 const adminToggleIcon = document.getElementById("admin-toggle-icon");
+const removalHistoryLink = document.getElementById("removal-history-link");
 const themeToggle = document.getElementById("theme-toggle");
 const themeToggleLabel = document.getElementById("theme-toggle-label");
 const themeIconSun = document.getElementById("theme-icon-sun");
@@ -139,6 +141,8 @@ function applyEventContent() {
   fridayEventLink.setAttribute("aria-current", eventKey === "friday" ? "page" : "false");
   wednesdayEventLink.setAttribute("aria-current", eventKey === "wednesday" ? "page" : "false");
   backupWeekLink.setAttribute("href", eventApiUrl("/api/admin/backup-week"));
+  removalHistoryLink.setAttribute("href", eventApiUrl("/istoric"));
+  withdrawShortcut.setAttribute("href", eventApiUrl("/inscrierile-mele"));
   teamsPageLink.classList.toggle("hidden", eventKey !== "friday");
 }
 
@@ -160,6 +164,7 @@ function cacheDashboardPayload(payload) {
   try {
     const publicPayload = { ...payload };
     delete publicPayload.inactiveRegistrations;
+    delete publicPayload.removalHistory;
     delete publicPayload.authenticated;
     localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(publicPayload));
   } catch {
@@ -184,31 +189,23 @@ function readSavedManagementLinks() {
 }
 
 function renderSavedManagementLinks() {
-  const links = readSavedManagementLinks();
+  const links = readSavedManagementLinks().filter((entry) => !entry.eventKey || entry.eventKey === eventKey);
   savedManagementLinks.innerHTML = "";
   savedManagementPanel.classList.toggle("hidden", links.length === 0);
 
-  links.forEach((entry) => {
-    const item = document.createElement("div");
-    item.className = "saved-management-item";
-    const link = document.createElement("a");
-    link.setAttribute("href", entry.path);
-    link.textContent = entry.eventKey === "wednesday" ? "Înscriere miercuri" : "Înscriere vineri";
-    const copyButton = document.createElement("button");
-    copyButton.type = "button";
-    copyButton.className = "secondary-button compact-button";
-    copyButton.textContent = "Copiază linkul";
-    copyButton.addEventListener("click", () => copyManagementLink(entry.path, copyButton));
-    item.append(link, copyButton);
-    savedManagementLinks.appendChild(item);
-  });
+  if (!links.length) return;
+  const link = document.createElement("a");
+  link.setAttribute("href", eventApiUrl("/inscrierile-mele"));
+  link.className = "secondary-button inline-link-button";
+  link.textContent = "Vezi înscrierea";
+  savedManagementLinks.appendChild(link);
 }
 
 function saveManagementLink(path) {
   const links = readSavedManagementLinks().filter((entry) => entry.path !== path);
   links.unshift({ path, eventKey, savedAt: new Date().toISOString() });
   try {
-    localStorage.setItem(MANAGEMENT_LINKS_KEY, JSON.stringify(links.slice(0, 10)));
+    localStorage.setItem(MANAGEMENT_LINKS_KEY, JSON.stringify(links));
   } catch {
     // The visible link can still be copied when browser storage is unavailable.
   }
@@ -418,10 +415,7 @@ function syncDashboardPayload(payload) {
   }
 
   updateSignupWindowState(payload.signupWindow);
-  renderRows(
-    Array.isArray(payload.registrations) ? payload.registrations : [],
-    Array.isArray(payload.inactiveRegistrations) ? payload.inactiveRegistrations : [],
-  );
+  renderRows(Array.isArray(payload.registrations) ? payload.registrations : []);
 }
 
 function updateLiveBoard(registrations = []) {
@@ -544,12 +538,10 @@ function updateSignupWindowState(signupWindow) {
   submitButtonLabel.textContent = "Trimite înscrierea";
 }
 
-function renderRows(registrations, inactiveRegistrations = []) {
+function renderRows(registrations) {
   tableBody.innerHTML = "";
   updateLiveBoard(registrations);
-  const visibleRegistrations = isAdminAuthenticated
-    ? [...registrations, ...inactiveRegistrations]
-    : registrations;
+  const visibleRegistrations = registrations;
 
   const newestRegistrationId = registrations.length ? registrations[registrations.length - 1].id : null;
   const shouldAnimateNewest = newestRegistrationId !== null && newestRegistrationId !== lastSeenRegistrationId;

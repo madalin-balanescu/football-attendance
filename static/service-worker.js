@@ -1,16 +1,19 @@
 const CACHE_PREFIX = "football-attendance-";
-const CACHE_NAME = `${CACHE_PREFIX}v9`;
-const ASSET_VERSION = "20260901-4";
+const CACHE_NAME = `${CACHE_PREFIX}v16`;
+const ASSET_VERSION = "20260906-4";
 const APP_SHELL = [
   "/",
   "/miercuri",
   "/echipe",
   "/manage.html",
+  "/inscrierile-mele",
+  "/history.html",
   `/styles.css?v=${ASSET_VERSION}`,
   `/ui-enhancements.css?v=${ASSET_VERSION}`,
   `/app.js?v=${ASSET_VERSION}`,
   `/teams.js?v=${ASSET_VERSION}`,
   `/manage.js?v=${ASSET_VERSION}`,
+  `/history.js?v=${ASSET_VERSION}`,
   `/manifest.webmanifest?v=${ASSET_VERSION}`,
   `/app-icon.svg?v=${ASSET_VERSION}`,
   `/app-icon-192.png?v=${ASSET_VERSION}`,

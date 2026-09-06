@@ -28,11 +28,11 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="manifest" href="/manifest.webmanifest?v=20260901-4" />
-    <link rel="icon" href="/app-icon.svg?v=20260901-4" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/app-icon-192.png?v=20260901-4" />
-    <link rel="stylesheet" href="/styles.css?v=20260901-4" />
-    <link rel="stylesheet" href="/ui-enhancements.css?v=20260901-4" />
+    <link rel="manifest" href="/manifest.webmanifest?v=20260906-4" />
+    <link rel="icon" href="/app-icon.svg?v=20260906-4" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/app-icon-192.png?v=20260906-4" />
+    <link rel="stylesheet" href="/styles.css?v=20260906-4" />
+    <link rel="stylesheet" href="/ui-enhancements.css?v=20260906-4" />
   </head>
   <body class="app-booting">
     <a class="skip-link" href="#continut-principal">Sari la conținutul principal</a>
@@ -319,8 +319,8 @@
             </div>
 
             <section id="saved-management-panel" class="saved-management-panel hidden" aria-labelledby="saved-management-title">
-              <strong id="saved-management-title">Linkurile tale de administrare</strong>
-              <p>Sunt salvate doar în acest browser. Păstrează-le private sau trimite linkul prietenului înscris.</p>
+              <strong id="saved-management-title">Înscrierea ta</strong>
+              <p>Vezi înscrierea ta sau retrage-te. Dacă ai înscris și un prieten, îl găsești tot aici.</p>
               <div id="saved-management-links" class="saved-management-links"></div>
             </section>
 
@@ -338,6 +338,11 @@
                 <p class="eyebrow">Lista curentă</p>
                 <h2>Prezență pentru <span id="week-label"></span></h2>
                 <p class="table-subtitle">Ordinea înscrierii decide cine intră direct și cine rămâne pe lista de așteptare.</p>
+                <p class="table-subtitle">
+                  <a id="removal-history-link" href="/istoric?event=friday" class="history-link-button inline-link-button">
+                    Jucători retrași
+                  </a>
+                </p>
               </div>
               <div class="legend">
                 <span class="legend-pill confirmed">Primele 18</span>
@@ -365,7 +370,7 @@
       </section>
     </main>
 
-    <nav class="mobile-section-nav" aria-label="Acces rapid la înscriere și listă">
+    <nav class="mobile-section-nav" aria-label="Acces rapid la înscriere, listă și retragere">
       <a class="mobile-section-link mobile-section-link-primary" href="#attendance-form">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M5 19h3.6L19.2 8.4a2.5 2.5 0 0 0-3.6-3.6L5 15.4V19Zm10.4-12.6 2.2 2.2" />
@@ -377,6 +382,12 @@
           <path d="M9 6h10M9 12h10M9 18h10M5 6h.01M5 12h.01M5 18h.01" />
         </svg>
         <span>Vezi lista</span>
+      </a>
+      <a id="withdraw-shortcut" class="mobile-section-link" href="/inscrierile-mele?event=friday" aria-label="Retrage-te sau retrage un jucător înscris de tine">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 5H5v14h5M13 8l4 4-4 4M9 12h8" />
+        </svg>
+        <span>Retrage-te</span>
       </a>
     </nav>
 
@@ -395,6 +406,6 @@
       </div>
     </div>
 
-    <script src="/app.js?v=20260901-4" defer></script>
+    <script src="/app.js?v=20260906-4" defer></script>
   </body>
 </html>

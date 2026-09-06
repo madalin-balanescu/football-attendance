@@ -1037,5 +1037,200 @@ class AttendanceServerTestCase(unittest.TestCase):
         self.assertFalse(restored["registrations"][0]["active"])
 
 
+    def test_removal_history_records_both_sources_and_only_current_event_week(self) -> None:
+        token, token_hash = server.create_management_token()
+        with server.get_connection() as connection:
+            ids = server.insert_registration_rows(connection, ["Organizer target", "Self target"], self.week_key, server.FRIDAY_EVENT, datetime(2026, 9, 1, 12), token_hash)
+        self.assertEqual(server.delete_registration_by_id(ids[0], server.WEDNESDAY_EVENT), 0)
+        self.assertEqual(server.delete_registration_by_id(ids[0]), 1)
+        self.assertEqual(server.withdraw_managed_registration(token_hash, ids[1], datetime(2026, 9, 5, 14)), 1)
+        self.assertEqual(server.withdraw_managed_registration(token_hash, ids[1]), 0)
+        self.assertEqual(server.delete_registration_by_id(ids[1]), 1)
+        rows = server.fetch_removal_history()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({row["source"] for row in rows}, {"organizer", "self"})
+        self.assertEqual(next(row for row in rows if row["source"] == "self")["removedAt"], "2026-09-05 14:00:00")
+        self.assertEqual(server.fetch_removal_history(server.WEDNESDAY_EVENT), [])
+        self.assertEqual(server.fetch_registrations(self.week_key), [])
+        server.ensure_database()
+        self.assertEqual(server.fetch_removal_history(), rows)
+
+    def test_removal_history_is_public_and_never_exposes_tokens(self) -> None:
+        row = self.seed_registrations(1)[0]
+        server.delete_registration_by_id(row["id"])
+        status, payload, _ = self.dispatch("GET", "/api/removal-history")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(payload["removalHistory"]), 1)
+        self.assertNotIn("managementTokenHash", json.dumps(payload))
+        with patch.object(server, "ADMIN_PASSWORD", None):
+            status, without_admin, _ = self.dispatch("GET", "/api/removal-history")
+            self.assertEqual(status, 200)
+            self.assertEqual(without_admin, payload)
+        status, other_event, _ = self.dispatch("GET", "/api/removal-history?event=wednesday")
+        self.assertEqual(status, 200)
+        self.assertEqual(other_event["removalHistory"], [])
+        status, _, _ = self.dispatch("POST", "/api/admin/delete-registration", {"id": row["id"]})
+        self.assertEqual(status, 401)
+        status, public, _ = self.dispatch("GET", "/api/registrations")
+        self.assertNotIn("removalHistory", public)
+        self.assertNotIn(row["name"], json.dumps(public))
+
+    def test_archive_failure_rolls_back_individual_deletion_and_withdrawal(self) -> None:
+        token, token_hash = server.create_management_token()
+        with server.get_connection() as connection:
+            registration_id = server.insert_registration_rows(connection, ["Target"], self.week_key, server.FRIDAY_EVENT, datetime(2026, 9, 1, 12), token_hash)[0]
+        with patch.object(server, "insert_removal_history", side_effect=RuntimeError("write failure")):
+            with self.assertRaises(RuntimeError):
+                server.delete_registration_by_id(registration_id)
+            with self.assertRaises(RuntimeError):
+                server.withdraw_managed_registration(token_hash, registration_id)
+        self.assertEqual(len(server.fetch_registrations(self.week_key)), 1)
+        self.assertEqual(server.fetch_removal_history(), [])
+
+    def test_manual_resets_clear_roster_and_removals_only_for_selected_event(self) -> None:
+        for event in [server.FRIDAY_EVENT, server.WEDNESDAY_EVENT]:
+            server.insert_registrations(["Removed", "Active"], self.week_key, event)
+            row = server.fetch_registrations(self.week_key, event)[0]
+            server.delete_registration_by_id(row["id"], event)
+        server.delete_registrations(self.week_key, server.FRIDAY_EVENT)
+        self.assertEqual(server.fetch_registrations(self.week_key), [])
+        self.assertEqual(server.fetch_removal_history(), [])
+        self.assertEqual(len(server.fetch_removal_history(server.WEDNESDAY_EVENT)), 1)
+        self.assertEqual(len(server.fetch_registrations(self.week_key, server.WEDNESDAY_EVENT)), 1)
+        server.delete_registrations(None, server.WEDNESDAY_EVENT)
+        self.assertEqual(server.fetch_removal_history(server.WEDNESDAY_EVENT), [])
+
+    def test_automatic_cleanup_expires_history_with_session(self) -> None:
+        week = "2026-W36"
+        for event in [server.FRIDAY_EVENT, server.WEDNESDAY_EVENT]:
+            server.insert_registrations(["Removed", "Active"], week, event)
+            server.delete_registration_by_id(server.fetch_registrations(week, event)[0]["id"], event)
+        server.cleanup_wednesday_registrations(datetime(2026, 9, 5, 12, tzinfo=server.APP_TIMEZONE))
+        self.assertEqual(len(server.fetch_removal_history(server.WEDNESDAY_EVENT, week)), 1)
+        server.cleanup_wednesday_registrations(datetime(2026, 9, 6, 0, tzinfo=server.APP_TIMEZONE))
+        self.assertEqual(server.fetch_removal_history(server.WEDNESDAY_EVENT, week), [])
+        self.assertEqual(server.fetch_registrations(week, server.WEDNESDAY_EVENT), [])
+        self.assertEqual(len(server.fetch_removal_history(server.FRIDAY_EVENT, week)), 1)
+        server.cleanup_wednesday_registrations(datetime(2026, 9, 7, 0, tzinfo=server.APP_TIMEZONE))
+        self.assertEqual(server.fetch_removal_history(server.FRIDAY_EVENT, week), [])
+        self.assertEqual(len(server.fetch_registrations(week, server.FRIDAY_EVENT)), 1)
+
+    def test_monday_catchup_clears_previous_session_removals(self) -> None:
+        server.insert_registrations(["Removed"], "2026-W36", server.WEDNESDAY_EVENT)
+        row = server.fetch_registrations("2026-W36", server.WEDNESDAY_EVENT)[0]
+        server.delete_registration_by_id(row["id"], server.WEDNESDAY_EVENT)
+        server.cleanup_wednesday_registrations(datetime(2026, 9, 7, 12, tzinfo=server.APP_TIMEZONE))
+        self.assertEqual(server.fetch_removal_history(server.WEDNESDAY_EVENT, "2026-W36"), [])
+
+    def test_migration_preserves_known_self_withdrawal_without_inventing_time(self) -> None:
+        rows = self.seed_registrations(2)
+        with server.get_connection() as connection:
+            connection.execute("UPDATE registrations SET is_active = 0, cancelled_at = ? WHERE id = ?", ("2026-09-05 13:00:00", rows[0]["id"]))
+            connection.execute("UPDATE registrations SET is_active = 0 WHERE id = ?", (rows[1]["id"],))
+        server.ensure_database()
+        history = server.fetch_removal_history()
+        server.ensure_database()
+        self.assertEqual(server.fetch_removal_history(), history)
+        self.assertEqual(len(history), 2)
+        self.assertEqual({row["source"] for row in history}, {"self"})
+        self.assertEqual(history[0]["removedAt"], "2026-09-05 13:00:00")
+        self.assertIsNone(history[1]["removedAt"])
+
+    def test_history_only_backup_restores_when_active_roster_is_empty(self) -> None:
+        row = self.seed_registrations(1)[0]
+        server.delete_registration_by_id(row["id"])
+        backup = server.build_registration_backup(self.week_key)
+        self.assertEqual(backup["registrations"], [])
+        self.assertEqual(len(backup["removalHistory"]), 1)
+        server.delete_registrations(self.week_key, server.FRIDAY_EVENT)
+        for _ in range(2):
+            status, _, _ = self.dispatch("POST", "/api/admin/restore-week", backup, cookie=self.login_admin())
+            self.assertEqual(status, 201)
+            self.assertEqual(server.fetch_removal_history(), backup["removalHistory"])
+        self.assertEqual(server.fetch_registrations(self.week_key), [])
+
+    def test_legacy_backup_removal_identity_is_stable_across_restore(self) -> None:
+        row = self.seed_registrations(1)[0]
+        with server.get_connection() as connection:
+            connection.execute("UPDATE registrations SET is_active = 0, cancelled_at = ? WHERE id = ?", ("2026-09-05 13:00:00", row["id"]))
+        backup = server.build_registration_backup(self.week_key)
+        backup.pop("removalHistory")
+        backup["registrations"][0].pop("removalKey")
+        server.ensure_database()
+        expected = server.fetch_removal_history()
+        for _ in range(2):
+            server.delete_registrations(self.week_key)
+            event, registrations = server.parse_registration_backup(backup, self.week_key)
+            server.restore_registration_backup(registrations, self.week_key, event)
+            self.assertEqual(server.fetch_removal_history(), expected)
+
+    def test_backup_rejects_duplicate_removal_keys_and_wrong_session(self) -> None:
+        self.seed_registrations(2)
+        backup = server.build_registration_backup(self.week_key)
+        for row in backup["registrations"]:
+            row.update(active=False, cancelledAt="2026-09-05 13:00:00", removalKey="a" * 32)
+        with self.assertRaises(ValueError):
+            server.parse_registration_backup(backup, self.week_key)
+        with self.assertRaises(ValueError):
+            server.parse_removal_history({"removalHistory": [{"id": "a" * 32, "name": "Old", "weekKey": "2020-W01", "source": "self"}]}, server.FRIDAY_EVENT, self.week_key)
+
+    def test_conflicting_backup_history_rolls_back_roster_restore(self) -> None:
+        self.seed_registrations(1)
+        backup = server.build_registration_backup(self.week_key)
+        backup["registrations"][0].update(active=False, cancelledAt="2026-09-05 13:00:00", removalKey="a" * 32)
+        backup["removalHistory"] = [{"id": "a" * 32, "name": "Different player", "weekKey": self.week_key, "createdAt": backup["registrations"][0]["createdAt"], "removedAt": "2026-09-05 13:00:00", "source": "self"}]
+        server.delete_registrations(self.week_key)
+        status, _, _ = self.dispatch("POST", "/api/admin/restore-week", backup, cookie=self.login_admin())
+        self.assertEqual(status, 400)
+        self.assertEqual(server.fetch_registrations(self.week_key), [])
+        self.assertEqual(server.fetch_inactive_registrations(self.week_key), [])
+        self.assertEqual(server.fetch_removal_history(), [])
+
+
+    def test_backup_uses_one_snapshot_when_player_withdraws_during_export(self) -> None:
+        token, token_hash = server.create_management_token()
+        with server.get_connection() as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
+            target = server.insert_registration_rows(connection, ["Target"], self.week_key, server.FRIDAY_EVENT, datetime(2026, 9, 1, 12), token_hash)[0]
+        original_fetch = server.fetch_registration_backup_rows
+        def withdraw_between_reads(week_key, event_key, connection=None):
+            rows = original_fetch(week_key, event_key, connection)
+            server.withdraw_managed_registration(token_hash, target)
+            return rows
+        with patch.object(server, "fetch_registration_backup_rows", side_effect=withdraw_between_reads):
+            backup = server.build_registration_backup(self.week_key)
+        self.assertTrue(backup["registrations"][0]["active"])
+        self.assertEqual(backup["removalHistory"], [])
+        self.assertEqual(server.fetch_registrations(self.week_key), [])
+        self.assertEqual(len(server.fetch_removal_history()), 1)
+
+    def test_backup_roundtrip_preserves_unknown_legacy_withdrawal_time(self) -> None:
+        row = self.seed_registrations(1)[0]
+        with server.get_connection() as connection:
+            connection.execute("UPDATE registrations SET is_active = 0 WHERE id = ?", (row["id"],))
+        server.ensure_database()
+        backup = server.build_registration_backup(self.week_key)
+        server.delete_registrations(self.week_key)
+        status, _, _ = self.dispatch("POST", "/api/admin/restore-week", backup, cookie=self.login_admin())
+        self.assertEqual(status, 201)
+        self.assertEqual(server.fetch_removal_history(), backup["removalHistory"])
+        self.assertIsNone(server.fetch_removal_history()[0]["removedAt"])
+
+
+    def test_submission_token_cannot_withdraw_player_from_another_submission(self) -> None:
+        token_a, hash_a = server.create_management_token()
+        token_b, hash_b = server.create_management_token()
+        with server.get_connection() as connection:
+            first = server.insert_registration_rows(connection, ["Same name"], self.week_key, server.FRIDAY_EVENT, datetime(2026, 9, 1, 12), hash_a)[0]
+            second = server.insert_registration_rows(connection, ["Same name"], self.week_key, server.FRIDAY_EVENT, datetime(2026, 9, 1, 13), hash_b)[0]
+        status, _, _ = self.dispatch("POST", "/api/management/withdraw", {"registrationId": second, "confirmed": True}, authorization=f"Bearer {token_a}")
+        self.assertEqual(status, 404)
+        self.assertEqual([row["id"] for row in server.fetch_registrations(self.week_key)], [first, second])
+        self.assertEqual(server.fetch_removal_history(), [])
+        status, _, _ = self.dispatch("POST", "/api/management/withdraw", {"registrationId": second, "confirmed": True}, authorization=f"Bearer {token_b}")
+        self.assertEqual(status, 200)
+        self.assertEqual([row["id"] for row in server.fetch_registrations(self.week_key)], [first])
+
+
 if __name__ == "__main__":
     unittest.main()
