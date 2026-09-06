@@ -223,6 +223,7 @@ test("app.js keeps and displays the private management link after submission", a
   assert.equal(document.getElementById("success-management-link").getAttribute("href"), managementPath);
   assert.equal(document.getElementById("success-management-actions").classList.contains("hidden"), false);
   assert.equal(document.getElementById("saved-management-panel").classList.contains("hidden"), false);
+  assert.equal(document.getElementById("withdraw-shortcut").classList.contains("hidden"), false);
   assert.equal(document.getElementById("success-panel").scrollIntoViewOptions.behavior, "smooth");
   assert.equal(document.getElementById("success-panel").scrollIntoViewOptions.block, "center");
   const saved = JSON.parse(storage.get("football-attendance:management-links"));
@@ -379,31 +380,6 @@ test("app.js refuses a backup file for the other football day before upload", as
     document.getElementById("admin-message").textContent,
     "Backupul aparține celeilalte zile de fotbal.",
   );
-});
-
-test("app.js shows an authoritative countdown for the next automatic opening", async () => {
-  const document = buildAppDocument();
-  loadScript("app.js", document, [
-    { body: { enabled: true, authenticated: false } },
-    {
-      body: appPayload({
-        signupWindow: {
-          isOpen: false,
-          scheduleOpen: false,
-          mode: "auto",
-          message: "",
-          nextOpen: "2099-03-19T11:59:00+02:00",
-          serverNow: "2099-03-18T11:59:00+02:00",
-        },
-      }),
-    },
-  ]);
-
-  await flush();
-
-  assert.equal(document.getElementById("countdown-card").classList.contains("hidden"), false);
-  assert.equal(document.getElementById("countdown-label").textContent, "Următoarea deschidere");
-  assert.match(document.getElementById("countdown-display").textContent, /1 zi/);
 });
 
 test("app.js success feedback identifies a newly waitlisted player", async () => {
@@ -615,6 +591,7 @@ test("saved submissions appear as one personal-player link and are not truncated
   await flush();
   assert.equal(document.getElementById("saved-management-links").children.length, 1);
   assert.equal(document.getElementById("saved-management-links").children[0].getAttribute("href"), "/inscrierile-mele?event=friday");
+  assert.equal(document.getElementById("withdraw-shortcut").classList.contains("hidden"), false);
   context.saveManagementLink(`/inscriere/${tokenA}`);
   assert.equal(JSON.parse(storage.get(savedLinksKey)).length, 13);
   assert.equal(document.getElementById("saved-management-links").children.length, 1);
@@ -645,9 +622,25 @@ for (const event of ["friday", "wednesday"]) {
     });
     await flush();
     assert.equal(document.getElementById("withdraw-shortcut").getAttribute("href"), `/inscrierile-mele?event=${event}`);
+    assert.equal(document.getElementById("withdraw-shortcut").classList.contains("hidden"), false);
     assert.equal(document.getElementById("saved-management-links").children[0].getAttribute("href"), `/inscrierile-mele?event=${event}`);
   });
 }
+
+test("attendance hides withdrawal shortcuts without a saved player for the selected day", async () => {
+  const document = buildAppDocument();
+  const stored = {
+    [savedLinksKey]: JSON.stringify([{ path: `/inscriere/${tokenB}`, eventKey: "wednesday" }]),
+  };
+  loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: false } },
+    { body: appPayload() },
+  ], { pathname: "/", storage: stored });
+  await flush();
+  assert.equal(document.getElementById("withdraw-shortcut").classList.contains("hidden"), true);
+  assert.equal(document.getElementById("saved-management-panel").classList.contains("hidden"), true);
+  assert.equal(document.getElementById("saved-management-links").children.length, 0);
+});
 
 test("combined withdrawal uses the selected player's token and refreshes every submission", async () => {
   const document = buildManagementDocument();

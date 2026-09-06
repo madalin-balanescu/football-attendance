@@ -59,40 +59,6 @@ html {
   white-space: nowrap;
 }
 
-.countdown-card {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-  padding: 11px 14px;
-  border: 1px solid rgba(47, 102, 232, 0.14);
-  border-radius: 16px;
-  color: var(--surface-tint-text);
-  background: color-mix(in srgb, var(--surface-tint) 76%, transparent);
-}
-
-.countdown-icon {
-  width: 18px;
-  height: 18px;
-  fill: currentColor;
-}
-
-.countdown-card span {
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.countdown-card strong {
-  font-size: 0.9rem;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-:root[data-event="wednesday"] .countdown-card {
-  border-color: rgba(19, 135, 95, 0.2);
-}
-
 .content-grid.is-closed {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 390px);
 }
@@ -251,25 +217,6 @@ tbody tr.withdrawn .status-badge {
 
 .management-shell {
   max-width: 820px;
-}
-
-.history-link-button {
-  min-height: 48px;
-  max-width: 100%;
-  color: #fff;
-  background: linear-gradient(135deg, #c62828, #991b1b);
-  border: 1px solid #ef9a9a;
-  box-shadow: 0 4px 14px rgba(185, 28, 28, 0.28);
-  text-align: center;
-}
-
-.history-link-button:hover {
-  background: #991b1b;
-}
-
-.history-link-button:focus-visible {
-  outline: 3px solid var(--text);
-  outline-offset: 3px;
 }
 
 .history-card {
@@ -571,21 +518,6 @@ tbody tr.withdrawn .status-badge {
   .mobile-section-link:focus-visible {
     outline: 3px solid color-mix(in srgb, var(--blue) 42%, transparent);
     outline-offset: 1px;
-  }
-
-  .countdown-card {
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 3px 9px;
-    margin-top: 10px;
-    padding: 9px 11px;
-  }
-
-  .countdown-icon {
-    grid-row: 1 / 3;
-  }
-
-  .countdown-card strong {
-    font-size: 0.82rem;
   }
 
   .match-route-label {

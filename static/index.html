@@ -28,11 +28,11 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="manifest" href="/manifest.webmanifest?v=20260906-4" />
-    <link rel="icon" href="/app-icon.svg?v=20260906-4" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/app-icon-192.png?v=20260906-4" />
-    <link rel="stylesheet" href="/styles.css?v=20260906-4" />
-    <link rel="stylesheet" href="/ui-enhancements.css?v=20260906-4" />
+    <link rel="manifest" href="/manifest.webmanifest?v=20260906-5" />
+    <link rel="icon" href="/app-icon.svg?v=20260906-5" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/app-icon-192.png?v=20260906-5" />
+    <link rel="stylesheet" href="/styles.css?v=20260906-5" />
+    <link rel="stylesheet" href="/ui-enhancements.css?v=20260906-5" />
   </head>
   <body class="app-booting">
     <a class="skip-link" href="#continut-principal">Sari la conținutul principal</a>
@@ -198,14 +198,6 @@
             </div>
             <p id="signup-window-message" class="window-status-callout hidden" aria-live="polite"></p>
 
-            <section id="countdown-card" class="countdown-card hidden" aria-live="polite">
-              <svg class="countdown-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 2.5a9.5 9.5 0 1 0 0 19 9.5 9.5 0 0 0 0-19Zm.9 4.3v4.8l3.4 2a.9.9 0 1 1-.9 1.5l-3.9-2.3a.9.9 0 0 1-.4-.8V6.8a.9.9 0 1 1 1.8 0Z" />
-              </svg>
-              <span id="countdown-label">Următoarea deschidere</span>
-              <strong id="countdown-display">Se calculează...</strong>
-            </section>
-
             <section class="live-board" aria-labelledby="signup-state-title">
               <div class="live-board-header">
                 <div>
@@ -338,13 +330,11 @@
                 <p class="eyebrow">Lista curentă</p>
                 <h2>Prezență pentru <span id="week-label"></span></h2>
                 <p class="table-subtitle">Ordinea înscrierii decide cine intră direct și cine rămâne pe lista de așteptare.</p>
-                <p class="table-subtitle">
-                  <a id="removal-history-link" href="/istoric?event=friday" class="history-link-button inline-link-button">
-                    Jucători retrași
-                  </a>
-                </p>
               </div>
               <div class="legend">
+                <a id="removal-history-link" href="/istoric?event=friday" class="legend-pill withdrawn">
+                  Jucători retrași
+                </a>
                 <span class="legend-pill confirmed">Primele 18</span>
                 <span class="legend-pill waiting">Lista de așteptare</span>
               </div>
@@ -383,7 +373,7 @@
         </svg>
         <span>Vezi lista</span>
       </a>
-      <a id="withdraw-shortcut" class="mobile-section-link" href="/inscrierile-mele?event=friday" aria-label="Retrage-te sau retrage un jucător înscris de tine">
+      <a id="withdraw-shortcut" class="mobile-section-link hidden" href="/inscrierile-mele?event=friday" aria-label="Retrage-te sau retrage un jucător înscris de tine">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M10 5H5v14h5M13 8l4 4-4 4M9 12h8" />
         </svg>
@@ -406,6 +396,6 @@
       </div>
     </div>
 
-    <script src="/app.js?v=20260906-4" defer></script>
+    <script src="/app.js?v=20260906-5" defer></script>
   </body>
 </html>

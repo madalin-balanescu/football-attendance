@@ -960,6 +960,7 @@ button:disabled {
 
 .table-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 16px;
   align-items: end;
@@ -985,16 +986,20 @@ button:disabled {
 .legend {
   display: flex;
   gap: 10px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
 }
 
 .legend-pill {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  padding: 10px 14px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
   border-radius: 999px;
-  font-size: 0.9rem;
+  font-size: 0.78rem;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .legend-pill.confirmed {
@@ -1005,6 +1010,15 @@ button:disabled {
 .legend-pill.waiting {
   background: var(--yellow-bg);
   color: var(--yellow-text);
+}
+
+.legend-pill.withdrawn {
+  color: #fff;
+  background: linear-gradient(135deg, #c62828, #991b1b);
+  border: 1px solid #ef9a9a;
+  box-shadow: 0 4px 14px rgba(185, 28, 28, 0.24);
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .team-tools {
@@ -1856,8 +1870,9 @@ tr.waiting .status-badge {
   }
 
   .legend-pill {
-    padding: 8px 12px;
-    font-size: 0.78rem;
+    padding: 7px 8px;
+    font-size: clamp(0.58rem, 2.5vw, 0.78rem);
+    white-space: nowrap;
   }
 
   .table-wrap {

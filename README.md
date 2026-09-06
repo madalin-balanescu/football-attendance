@@ -14,7 +14,6 @@ Current Friday dashboard with a populated roster and the public `Jucători retra
 - separate public lists and automatic match dates for Friday and Wednesday
 - event-specific venue links that open the correct destination in Google Maps
 - distinct blue Friday and green pitch-inspired Wednesday visual themes
-- live countdown to the next opening or current closing time
 - adaptive layout that prioritizes signup while open and the roster while closed
 - detailed confirmation showing each submitted player's position and status
 - one day-specific `Înscrierea ta` view combining registrations saved in this browser
@@ -157,6 +156,8 @@ action per player.
 Both `Retrage-te` and `Vezi înscrierea` preserve Friday/Wednesday context; the return link
 opens that same day's roster. The API response determines the day of each registration,
 so outdated browser labels cannot mix players from different days.
+On mobile, `Retrage-te` stays hidden until the current browser has saved at least one
+registration link for the selected football day.
 Existing saved links are included automatically, duplicate links/players are shown once,
 and confirmed expired links are removed. Temporary network errors keep links for retry.
 New saves no longer discard older links at a fixed ten-link limit.
@@ -176,7 +177,7 @@ only by an admin.
 
 ### Current-session removal history
 
-The small `Jucători retrași` link beside the current player list opens a separate public page.
+The red `Jucători retrași` status pill beside `Primele 18` and `Lista de așteptare` opens a separate public page.
 It shows the selected football day's current ISO week only, newest removals first, with
 name, match date, signup time, removal time, and who removed the player. A source filter
 separates organizer removals and voluntary withdrawals. Phone layouts show labeled cards.
@@ -304,7 +305,7 @@ Frontend coverage includes:
 - detailed multi-player success feedback
 - browser persistence and one combined entry for saved private management links
 - multiple-submission aggregation, token-scoped withdrawal, deduplication, expired-link cleanup, and partial-failure retry
-- authoritative countdown rendering
+- day-specific withdrawal shortcut visibility based on registrations saved in the current browser
 - offline cached-list fallback
 - Wednesday route copy and event-aware requests
 - admin backup restore behavior

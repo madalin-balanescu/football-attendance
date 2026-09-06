@@ -6,9 +6,6 @@ const submitButtonLabel = submitButton.querySelector(".button-label");
 const submissionOverlay = document.getElementById("submission-overlay");
 const formMessage = document.getElementById("form-message");
 const signupWindowMessage = document.getElementById("signup-window-message");
-const countdownCard = document.getElementById("countdown-card");
-const countdownLabel = document.getElementById("countdown-label");
-const countdownDisplay = document.getElementById("countdown-display");
 const connectionStatus = document.getElementById("connection-status");
 const formControlsShell = document.querySelector(".form-controls-shell");
 const formLockedOverlay = document.getElementById("form-locked-overlay");
@@ -109,10 +106,6 @@ let isSignupWindowOpen = true;
 let currentSignupMode = "auto";
 let isScheduleOpen = true;
 let lastSeenRegistrationId = null;
-let countdownTimerId = null;
-let countdownTarget = null;
-let countdownClockOffset = 0;
-let countdownRefreshPending = false;
 
 const DASHBOARD_CACHE_KEY = `football-attendance:${eventKey}`;
 const MANAGEMENT_LINKS_KEY = "football-attendance:management-links";
@@ -189,9 +182,10 @@ function readSavedManagementLinks() {
 }
 
 function renderSavedManagementLinks() {
-  const links = readSavedManagementLinks().filter((entry) => !entry.eventKey || entry.eventKey === eventKey);
+  const links = readSavedManagementLinks().filter((entry) => entry.eventKey === eventKey);
   savedManagementLinks.innerHTML = "";
   savedManagementPanel.classList.toggle("hidden", links.length === 0);
+  withdrawShortcut.classList.toggle("hidden", links.length === 0);
 
   if (!links.length) return;
   const link = document.createElement("a");
@@ -231,75 +225,6 @@ function readCachedDashboardPayload() {
     return cachedPayload ? JSON.parse(cachedPayload) : null;
   } catch {
     return null;
-  }
-}
-
-function formatCountdown(milliseconds) {
-  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
-  const days = Math.floor(totalSeconds / 86400);
-  const hours = Math.floor((totalSeconds % 86400) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const clock = [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
-  return days > 0 ? `${days} ${days === 1 ? "zi" : "zile"} · ${clock}` : clock;
-}
-
-function stopCountdown() {
-  if (countdownTimerId !== null && typeof window.clearInterval === "function") {
-    window.clearInterval(countdownTimerId);
-  }
-  countdownTimerId = null;
-  countdownTarget = null;
-  countdownCard.classList.add("hidden");
-}
-
-function renderCountdown() {
-  if (!countdownTarget) {
-    return;
-  }
-
-  const remaining = countdownTarget - (Date.now() + countdownClockOffset);
-  countdownDisplay.textContent = remaining > 0 ? formatCountdown(remaining) : "Se actualizează...";
-
-  if (remaining <= 0) {
-    stopCountdown();
-    if (!countdownRefreshPending) {
-      countdownRefreshPending = true;
-      const refreshTimer = window.setTimeout(() => {
-        loadRegistrations()
-          .catch(() => {})
-          .finally(() => {
-            countdownRefreshPending = false;
-          });
-      }, 1500);
-      refreshTimer?.unref?.();
-    }
-  }
-}
-
-function configureCountdown(signupWindow) {
-  stopCountdown();
-  if (!signupWindow || signupWindow.mode !== "auto") {
-    return;
-  }
-
-  const targetValue = signupWindow.isOpen ? signupWindow.end : signupWindow.nextOpen;
-  const target = Date.parse(String(targetValue || ""));
-  const serverNow = Date.parse(String(signupWindow.serverNow || ""));
-  if (!Number.isFinite(target)) {
-    return;
-  }
-
-  countdownClockOffset = Number.isFinite(serverNow) ? serverNow - Date.now() : 0;
-  countdownTarget = target;
-  countdownLabel.textContent = signupWindow.isOpen
-    ? "Înscrierile se închid în"
-    : "Următoarea deschidere";
-  countdownCard.classList.remove("hidden");
-  renderCountdown();
-
-  if (typeof window.setInterval === "function") {
-    countdownTimerId = window.setInterval(renderCountdown, 1000);
   }
 }
 
@@ -525,7 +450,6 @@ function updateSignupWindowState(signupWindow) {
   contentGrid.classList.toggle("is-closed", !isSignupWindowOpen);
   document.body.classList.toggle("signup-is-closed", !isSignupWindowOpen);
   setFormLocked(!isSignupWindowOpen);
-  configureCountdown(signupWindow);
   updateSignupModeButtons();
 
   if (!isSignupWindowOpen) {

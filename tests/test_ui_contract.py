@@ -40,11 +40,16 @@ class FrontendContractTestCase(unittest.TestCase):
         styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
         enhancements = (STATIC_DIR / "ui-enhancements.css").read_text(encoding="utf-8")
 
-        self.assertIn('id="countdown-card"', source)
+        self.assertNotIn('id="countdown-card"', source)
         self.assertIn('id="connection-status"', source)
         self.assertIn('class="mobile-section-nav"', source)
         self.assertIn('href="#attendance-form"', source)
         self.assertIn('href="#attendance-list"', source)
+        self.assertIn('id="withdraw-shortcut" class="mobile-section-link hidden"', source)
+        self.assertRegex(
+            source,
+            r'<div class="legend">\s*<a id="removal-history-link"[^>]*>\s*Jucători retrași',
+        )
         self.assertIn('id="backup-week-link"', source)
         self.assertIn('id="restore-week-input"', source)
         self.assertIn('id="restore-week-button"', source)
@@ -62,6 +67,8 @@ class FrontendContractTestCase(unittest.TestCase):
             r"\.hero-card\s*\{[^}]*overflow:\s*clip;",
             "The hero must clip decoration without becoming an internal scroll container.",
         )
+        self.assertRegex(styles, r"\.legend\s*\{[^}]*flex-wrap:\s*nowrap;")
+        self.assertRegex(styles, r"\.legend-pill\s*\{[^}]*white-space:\s*nowrap;")
         self.assertRegex(styles, r"\.hero-card::after\s*\{[^}]*inset:\s*auto 0 0 40%;")
         self.assertRegex(
             styles,
@@ -82,8 +89,8 @@ class FrontendContractTestCase(unittest.TestCase):
         app_script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
         self.assertIn("navigator.serviceWorker.controller", app_script)
         self.assertIn('addEventListener("controllerchange"', app_script)
-        self.assertIn('/styles.css?v=20260906-4', attendance_page)
-        self.assertIn('/app.js?v=20260906-4', attendance_page)
+        self.assertIn('/styles.css?v=20260906-5', attendance_page)
+        self.assertIn('/app.js?v=20260906-5', attendance_page)
 
         shell_match = re.search(r"const APP_SHELL = \[(.*?)\];", worker, re.DOTALL)
         self.assertIsNotNone(shell_match)

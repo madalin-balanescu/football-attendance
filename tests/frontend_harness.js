@@ -222,9 +222,6 @@ function buildAppDocument() {
   makeElement(document, "div", "submission-overlay");
   makeElement(document, "p", "form-message");
   makeElement(document, "p", "signup-window-message", ["hidden"]);
-  makeElement(document, "section", "countdown-card", ["hidden"]);
-  makeElement(document, "span", "countdown-label");
-  makeElement(document, "strong", "countdown-display");
   makeElement(document, "span", "connection-status", ["hidden"]);
   makeElement(document, "div", "form-controls-shell");
   makeElement(document, "div", "form-locked-overlay", ["hidden"]);
@@ -265,7 +262,7 @@ function buildAppDocument() {
   makeElement(document, "button", "copy-management-link");
   makeElement(document, "section", "saved-management-panel", ["hidden"]);
   makeElement(document, "div", "saved-management-links");
-  makeElement(document, "a", "withdraw-shortcut");
+  makeElement(document, "a", "withdraw-shortcut", ["hidden"]);
   makeElement(document, "section", "admin-panel", ["hidden"]);
   makeElement(document, "form", "admin-login-form");
   makeElement(document, "input", "admin-password");
