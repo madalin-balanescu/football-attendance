@@ -89,8 +89,10 @@ class FrontendContractTestCase(unittest.TestCase):
         app_script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
         self.assertIn("navigator.serviceWorker.controller", app_script)
         self.assertIn('addEventListener("controllerchange"', app_script)
-        self.assertIn('/styles.css?v=20260906-5', attendance_page)
-        self.assertIn('/app.js?v=20260906-5', attendance_page)
+        self.assertIn('/styles.css?v=20260906-6', attendance_page)
+        self.assertIn('/app.js?v=20260906-6', attendance_page)
+        enhancements = (STATIC_DIR / "ui-enhancements.css").read_text(encoding="utf-8")
+        self.assertIn("grid-auto-columns: minmax(0, 1fr)", enhancements)
 
         shell_match = re.search(r"const APP_SHELL = \[(.*?)\];", worker, re.DOTALL)
         self.assertIsNotNone(shell_match)

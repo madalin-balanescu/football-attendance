@@ -157,7 +157,8 @@ Both `Retrage-te` and `Vezi înscrierea` preserve Friday/Wednesday context; the 
 opens that same day's roster. The API response determines the day of each registration,
 so outdated browser labels cannot mix players from different days.
 On mobile, `Retrage-te` stays hidden until the current browser has saved at least one
-registration link for the selected football day.
+registration link for the selected football day. The visible navigation actions divide
+the available width evenly, using two columns without `Retrage-te` and three with it.
 Existing saved links are included automatically, duplicate links/players are shown once,
 and confirmed expired links are removed. Temporary network errors keep links for retry.
 New saves no longer discard older links at a fixed ten-link limit.
