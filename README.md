@@ -1,10 +1,12 @@
 # Football Attendance
 
-Weekly football attendance app with separate Friday and Wednesday signup lists, admin controls, and a dedicated Friday team-builder view for creating 3 balanced teams from the first 18 confirmed players.
+Weekly football attendance app with separate Friday and Wednesday signup lists, browser-local player management, public withdrawal visibility, admin controls, and a Friday team builder for creating 3 balanced teams from the first 18 confirmed players.
 
 ## Preview
 
 ![Football Attendance Preview](docs/attendance-preview.png)
+
+Current Friday dashboard with a populated roster and the public `Jucători retrași` shortcut.
 
 ## What It Does
 
@@ -15,7 +17,7 @@ Weekly football attendance app with separate Friday and Wednesday signup lists, 
 - live countdown to the next opening or current closing time
 - adaptive layout that prioritizes signup while open and the roster while closed
 - detailed confirmation showing each submitted player's position and status
-- one `Înscrierea ta` view combining all registrations saved in this browser
+- one day-specific `Înscrierea ta` view combining registrations saved in this browser
 - private submission links remain available for sharing with the players in that submission
 - per-player withdrawal with confirmation and automatic waiting-list promotion
 - a separate mobile-friendly, public removal history for the current session
@@ -30,7 +32,7 @@ Weekly football attendance app with separate Friday and Wednesday signup lists, 
   - download and safely restore the selected current-week list
   - delete one registration
   - clear the current week
-  - clear all historical registrations
+  - clear all registrations for the selected event
 - dedicated `/echipe` page for:
   - assigning each confirmed player a preferred role
   - generating 3 balanced teams
@@ -69,6 +71,8 @@ Then open:
 - [http://localhost:8000](http://localhost:8000)
 - [http://localhost:8000/miercuri](http://localhost:8000/miercuri)
 - [http://localhost:8000/echipe](http://localhost:8000/echipe)
+- [http://localhost:8000/inscrierile-mele?event=friday](http://localhost:8000/inscrierile-mele?event=friday)
+- [http://localhost:8000/istoric?event=friday](http://localhost:8000/istoric?event=friday)
 
 ## Environment Variables
 
@@ -148,7 +152,8 @@ registration ID, and explicit confirmation; names alone cannot remove a registra
 Cancellation attempts are limited to 5 per client IP in 10 minutes.
 
 The saved-links panel shows a single `Vezi înscrierea` entry. It combines players from
-saved submissions for the selected football day, with match dates and a separate withdrawal action per player.
+saved submissions for the selected football day, with match dates and a separate withdrawal
+action per player.
 Both `Retrage-te` and `Vezi înscrierea` preserve Friday/Wednesday context; the return link
 opens that same day's roster. The API response determines the day of each registration,
 so outdated browser labels cannot mix players from different days.
@@ -162,7 +167,6 @@ private link grants access only to that submission. The combined page URL itself
 no tokens and does not grant access on another browser; open the original private links
 there to add those registrations. Links already lost from browser storage cannot be
 reconstructed from player names. No new account or server-side identity is created.
-
 
 Withdrawn rows remain inactive until the list resets. Both self-withdrawals and individual
 organizer deletions write a removal record in the same database transaction. Public ordering
@@ -287,7 +291,7 @@ Backend coverage includes:
 - team reset
 - private-link authentication and hash-only token storage
 - confirmed-player withdrawal and waiting-list promotion
-- cancellation rate limiting and inactive admin audit visibility
+- cancellation rate limiting and public current-session history visibility
 - transactional organizer/self removal history, migration, and rollback on history write failures
 - session expiration, manual resets, and event isolation
 - history-only backups and duplicate/conflicting removal identity validation
@@ -334,8 +338,8 @@ node --check static/service-worker.js
 - [server.py](server.py) - API, storage, admin logic, routing
 - [static/index.html](static/index.html) - main attendance page
 - [static/app.js](static/app.js) - main page behavior
-- [static/manage.html](static/manage.html) - private registration-management page
-- [static/manage.js](static/manage.js) - private-link loading, copying, and withdrawal behavior
+- [static/manage.html](static/manage.html) - private and combined registration-management page
+- [static/manage.js](static/manage.js) - day-specific aggregation, private-link loading, and withdrawal behavior
 - [static/history.html](static/history.html) and [static/history.js](static/history.js) - public current-session removal history
 - [static/teams.html](static/teams.html) - dedicated team-builder page
 - [static/teams.js](static/teams.js) - team-builder interactions
