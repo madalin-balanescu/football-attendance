@@ -295,6 +295,41 @@ class AttendanceServerTestCase(unittest.TestCase):
                     self.assertEqual(payload["isOpen"], expected)
                     self.assertEqual(payload["scheduleOpen"], expected)
 
+    def test_wednesday_priority_access_ends_exactly_tuesday_at_noon(self) -> None:
+        monday_evening = datetime(2026, 3, 16, 19, 30, tzinfo=server.APP_TIMEZONE)
+        tuesday_before_noon = datetime(2026, 3, 17, 11, 59, 59, tzinfo=server.APP_TIMEZONE)
+        tuesday_noon = datetime(2026, 3, 17, 12, 0, tzinfo=server.APP_TIMEZONE)
+
+        with patch("server.signup_mode", return_value="auto"):
+            self.assertEqual(
+                server.signup_window_payload(monday_evening, server.WEDNESDAY_EVENT)[
+                    "registrationPhase"
+                ],
+                "member_only",
+            )
+            self.assertEqual(
+                server.signup_window_payload(tuesday_before_noon, server.WEDNESDAY_EVENT)[
+                    "registrationPhase"
+                ],
+                "member_only",
+            )
+            self.assertEqual(
+                server.signup_window_payload(tuesday_noon, server.WEDNESDAY_EVENT)[
+                    "registrationPhase"
+                ],
+                "open",
+            )
+
+    def test_wednesday_member_roster_contains_extracted_contacts(self) -> None:
+        members = server.wednesday_members_payload(self.week_key)
+
+        self.assertEqual(len(members), 36)
+        self.assertEqual(members[0]["label"], "Danyashy — +40 741 253 240")
+        self.assertIn(
+            "Fără nume — +40 745 241 217",
+            [member["label"] for member in members],
+        )
+
     def test_friday_and_wednesday_registrations_are_isolated(self) -> None:
         server.insert_registrations(["Vineri"], self.week_key)
         server.insert_registrations(
@@ -381,6 +416,7 @@ class AttendanceServerTestCase(unittest.TestCase):
         self.assertEqual(payload["error"], "Parola de administrator este incorectă.")
 
     def test_registration_requires_at_least_one_name(self) -> None:
+        server.set_setting("signup_mode", "force_open")
         status, payload, _ = self.dispatch(
             "POST",
             "/api/registrations",
@@ -557,6 +593,63 @@ class AttendanceServerTestCase(unittest.TestCase):
         self.assertEqual(payload["eventKey"], server.WEDNESDAY_EVENT)
         self.assertEqual(payload["registrations"][0]["name"], "Miercuri")
         self.assertEqual(server.fetch_registrations(self.week_key), [])
+
+    def test_wednesday_priority_access_accepts_only_an_available_member(self) -> None:
+        member = server.WEDNESDAY_MEMBERS[0]
+        fixed_moment = datetime(2026, 9, 14, 20, 0, tzinfo=server.APP_TIMEZONE)
+
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed_moment if tz else fixed_moment.replace(tzinfo=None)
+
+        with patch("server.datetime", FixedDateTime):
+            invalid_status, invalid_payload, _ = self.dispatch(
+                "POST",
+                "/api/registrations",
+                payload={"person1": "Jucător extern", "event": server.WEDNESDAY_EVENT},
+            )
+            self.assertEqual(invalid_status, HTTPStatus.BAD_REQUEST)
+            self.assertIn("lista membrilor WhatsApp", invalid_payload["error"])
+
+            status, payload, _ = self.dispatch(
+                "POST",
+                "/api/registrations",
+                payload={"memberId": member["id"], "event": server.WEDNESDAY_EVENT},
+            )
+            self.assertEqual(status, HTTPStatus.CREATED)
+            self.assertEqual(payload["registrations"][0]["name"], member["name"])
+            selected = next(
+                item for item in payload["wednesdayMembers"] if item["id"] == member["id"]
+            )
+            self.assertFalse(selected["available"])
+
+            duplicate_status, duplicate_payload, _ = self.dispatch(
+                "POST",
+                "/api/registrations",
+                payload={"memberId": member["id"], "event": server.WEDNESDAY_EVENT},
+                client_ip="198.51.100.88",
+            )
+            self.assertEqual(duplicate_status, HTTPStatus.CONFLICT)
+            self.assertIn("deja înscris", duplicate_payload["error"])
+
+    def test_wednesday_accepts_external_names_from_tuesday_noon(self) -> None:
+        fixed_moment = datetime(2026, 9, 15, 12, 0, tzinfo=server.APP_TIMEZONE)
+
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed_moment if tz else fixed_moment.replace(tzinfo=None)
+
+        with patch("server.datetime", FixedDateTime):
+            status, payload, _ = self.dispatch(
+                "POST",
+                "/api/registrations",
+                payload={"person1": "Jucător extern", "event": server.WEDNESDAY_EVENT},
+            )
+
+        self.assertEqual(status, HTTPStatus.CREATED)
+        self.assertEqual(payload["registrations"][0]["name"], "Jucător extern")
 
     def test_registrations_payload_marks_first_18_confirmed_and_rest_waiting(self) -> None:
         self.seed_registrations(count=19)

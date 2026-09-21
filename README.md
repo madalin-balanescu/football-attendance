@@ -128,9 +128,18 @@ Friday automatic mode:
 Wednesday automatic mode:
 
 - signup opens every Monday at `19:30`
+- from Monday at `19:30` until Tuesday at `12:00`, only WhatsApp-group members can register by selecting their name or phone number from the searchable member list
+- from Tuesday at `12:00`, the standard form opens and external players can also be added
 - signup closes Wednesday at `19:30`, when the `19:30-21:30` match starts
 - Wednesday registrations are removed on Sunday
 - if Render sleeps through Sunday, cleanup runs before the first request in the new week
+
+The Wednesday member roster is stored in
+[`config/wednesday_members.json`](config/wednesday_members.json). Each entry has a stable member ID,
+an optional WhatsApp display name, and a phone number. Active members can register only once per
+week during the priority window; withdrawing or deleting that registration makes the member available
+again. A visitor may add multiple players by submitting one available member at a time; after each
+successful registration, the picker resets and remains available for the next selection.
 
 Outside each event's window, its form is locked. Friday and Wednesday admin overrides are stored independently.
 

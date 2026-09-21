@@ -258,7 +258,7 @@ test("app.js configures the Wednesday page and sends requests to the Wednesday e
   assert.match(document.getElementById("page-description").textContent, /19:30 și 21:30/);
   assert.equal(
     document.getElementById("schedule-callout").textContent,
-    "Înscrierile încep în fiecare luni la ora 19:30.",
+    "Luni 19:30 – marți 12:00: membri WhatsApp. După 12:00: și jucători externi.",
   );
   assert.equal(
     document.getElementById("wednesday-event-link").getAttribute("aria-current"),
@@ -276,6 +276,129 @@ test("app.js configures the Wednesday page and sends requests to the Wednesday e
   await context.submitRegistration({ preventDefault() {} });
 
   assert.equal(JSON.parse(requests[2].options.body).event, "wednesday");
+});
+
+test("app.js shows the searchable member picker during Wednesday priority access", async () => {
+  const document = buildAppDocument();
+  const memberWindow = {
+    isOpen: true,
+    scheduleOpen: true,
+    mode: "auto",
+    message: "Înscrierile sunt deschise doar pentru membrii grupului WhatsApp.",
+    registrationPhase: "member_only",
+    memberOnlyUntil: "2099-03-17T12:00:00+02:00",
+    serverNow: "2099-03-16T20:00:00+02:00",
+  };
+  const members = [
+    {
+      id: "wm-001",
+      name: "Danyashy",
+      phone: "+40 741 253 240",
+      label: "Danyashy — +40 741 253 240",
+      available: true,
+    },
+    {
+      id: "wm-002",
+      name: "",
+      phone: "+40 745 241 217",
+      label: "Fără nume — +40 745 241 217",
+      available: true,
+    },
+  ];
+  const { context, requests } = loadScript(
+    "app.js",
+    document,
+    [
+      { body: { enabled: true, authenticated: false } },
+      {
+        body: appPayload({
+          weekLabel: "18 Mar 2099",
+          signupWindow: memberWindow,
+          wednesdayMembers: members,
+          registrations: [],
+        }),
+      },
+      {
+        status: 201,
+        body: appPayload({
+          weekLabel: "18 Mar 2099",
+          signupWindow: memberWindow,
+          wednesdayMembers: [{ ...members[0], available: false }, members[1]],
+          registrations: [
+            {
+              id: 7,
+              position: 1,
+              name: "Danyashy",
+              createdAt: "2099-03-16 20:01:00",
+              status: "confirmed",
+            },
+          ],
+          submittedRegistrationIds: [7],
+          message: "Înscriere reușită.",
+        }),
+      },
+      {
+        status: 201,
+        body: appPayload({
+          weekLabel: "18 Mar 2099",
+          signupWindow: memberWindow,
+          wednesdayMembers: members.map((member) => ({ ...member, available: false })),
+          registrations: [
+            {
+              id: 7,
+              position: 1,
+              name: "Danyashy",
+              createdAt: "2099-03-16 20:01:00",
+              status: "confirmed",
+            },
+            {
+              id: 8,
+              position: 2,
+              name: "+40 745 241 217",
+              createdAt: "2099-03-16 20:02:00",
+              status: "confirmed",
+            },
+          ],
+          submittedRegistrationIds: [8],
+          message: "Înscriere reușită.",
+        }),
+      },
+    ],
+    { pathname: "/miercuri" },
+  );
+
+  await flush();
+
+  assert.equal(document.getElementById("wednesday-member-panel").classList.contains("hidden"), false);
+  assert.equal(document.getElementById("standard-signup-fields").classList.contains("hidden"), true);
+  assert.equal(document.getElementById("wednesday-member-options").children.length, 2);
+  assert.equal(document.getElementById("person1").disabled, true);
+  assert.equal(document.getElementById("wednesday-member-search").disabled, false);
+  assert.equal(document.getElementById("submit-button").querySelector(".button-label").textContent, "Înscrie-mă");
+  assert.equal(document.getElementById("submit-button").disabled, true);
+
+  document.getElementById("wednesday-member-search").value = members[0].label;
+  document.getElementById("wednesday-member-search").listeners.input();
+  assert.equal(document.getElementById("submit-button").disabled, false);
+  await context.submitRegistration({ preventDefault() {} });
+
+  const submittedBody = JSON.parse(requests[2].options.body);
+  assert.deepEqual(submittedBody, { memberId: "wm-001", event: "wednesday" });
+  assert.equal(document.getElementById("wednesday-member-options").children.length, 1);
+  assert.equal(document.getElementById("attendance-table-body").children.length, 1);
+  assert.equal(document.getElementById("wednesday-member-search").value, "");
+  assert.equal(document.getElementById("submit-button").disabled, true);
+
+  document.getElementById("wednesday-member-search").value = members[1].label;
+  document.getElementById("wednesday-member-search").listeners.input();
+  assert.equal(document.getElementById("submit-button").disabled, false);
+  await context.submitRegistration({ preventDefault() {} });
+
+  const secondSubmittedBody = JSON.parse(requests[3].options.body);
+  assert.deepEqual(secondSubmittedBody, { memberId: "wm-002", event: "wednesday" });
+  assert.equal(document.getElementById("wednesday-member-options").children.length, 0);
+  assert.equal(document.getElementById("attendance-table-body").children.length, 2);
+  assert.equal(document.getElementById("submit-button").disabled, true);
 });
 
 test("app.js locks form and button when signup window is closed", async () => {

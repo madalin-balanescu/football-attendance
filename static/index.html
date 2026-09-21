@@ -28,11 +28,11 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="manifest" href="/manifest.webmanifest?v=20260906-6" />
-    <link rel="icon" href="/app-icon.svg?v=20260906-6" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/app-icon-192.png?v=20260906-6" />
-    <link rel="stylesheet" href="/styles.css?v=20260906-6" />
-    <link rel="stylesheet" href="/ui-enhancements.css?v=20260906-6" />
+    <link rel="manifest" href="/manifest.webmanifest?v=20260921-1" />
+    <link rel="icon" href="/app-icon.svg?v=20260921-1" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/app-icon-192.png?v=20260921-1" />
+    <link rel="stylesheet" href="/styles.css?v=20260921-1" />
+    <link rel="stylesheet" href="/ui-enhancements.css?v=20260921-1" />
   </head>
   <body class="app-booting">
     <a class="skip-link" href="#continut-principal">Sari la conținutul principal</a>
@@ -246,9 +246,9 @@
         <div id="content-grid" class="content-grid">
           <form id="attendance-form" class="signup-card" aria-labelledby="signup-card-title">
             <div class="action-card-head">
-              <span class="action-pill">Rezervă-ți locul</span>
+              <span id="signup-card-pill" class="action-pill">Rezervă-ți locul</span>
               <h3 id="signup-card-title">Trimite prezența pentru tine sau pentru încă un coleg</h3>
-              <p>Completezi rapid, iar lista se actualizează instant în ordinea înscrierii.</p>
+              <p id="signup-card-description">Completezi rapid, iar lista se actualizează instant în ordinea înscrierii.</p>
             </div>
             <div class="form-controls-shell">
               <div id="form-locked-overlay" class="form-locked-overlay hidden" aria-hidden="true">
@@ -260,34 +260,59 @@
                 </div>
               </div>
 
-              <label class="field">
-                <span>Numele persoanei 1 (exact cum apare în WhatsApp)</span>
-                <input
-                  id="person1"
-                  name="person1"
-                  type="text"
-                  maxlength="80"
-                  placeholder="Ex: Popescu Ion"
-                  autocomplete="name"
-                  enterkeyhint="next"
-                  required
-                />
-              </label>
+              <section id="wednesday-member-panel" class="member-signup-panel hidden" aria-labelledby="member-panel-title">
+                <div class="member-window-note">
+                  <span class="member-phase-badge">Acces prioritar</span>
+                  <strong id="member-panel-title">Doar pentru membrii grupului WhatsApp</strong>
+                  <p>Alege un membru din listă și înscrie-l. După confirmare, poți selecta și adăuga un alt membru.</p>
+                </div>
 
-              <label class="field">
-                <span>Numele persoanei 2 (opțional)</span>
-                <input
-                  id="person2"
-                  name="person2"
-                  type="text"
-                  maxlength="80"
-                  placeholder="Ex: Alex"
-                  autocomplete="name"
-                  enterkeyhint="send"
-                />
-              </label>
+                <label class="field member-search-field">
+                  <span>Caută numele sau numărul de telefon</span>
+                  <input
+                    id="wednesday-member-search"
+                    name="wednesdayMember"
+                    type="search"
+                    list="wednesday-member-options"
+                    placeholder="Începe să scrii numele sau numărul"
+                    autocomplete="off"
+                    enterkeyhint="send"
+                  />
+                  <datalist id="wednesday-member-options"></datalist>
+                  <small id="member-availability-copy" class="field-help"></small>
+                </label>
+              </section>
 
-              <button id="submit-button" type="submit">
+              <div id="standard-signup-fields">
+                <label class="field">
+                  <span>Numele persoanei 1 (exact cum apare în WhatsApp)</span>
+                  <input
+                    id="person1"
+                    name="person1"
+                    type="text"
+                    maxlength="80"
+                    placeholder="Ex: Popescu Ion"
+                    autocomplete="name"
+                    enterkeyhint="next"
+                    required
+                  />
+                </label>
+
+                <label class="field">
+                  <span>Numele persoanei 2 (opțional)</span>
+                  <input
+                    id="person2"
+                    name="person2"
+                    type="text"
+                    maxlength="80"
+                    placeholder="Ex: Alex"
+                    autocomplete="name"
+                    enterkeyhint="send"
+                  />
+                </label>
+              </div>
+
+              <button id="submit-button" type="submit" disabled>
                 <span class="button-label">Trimite înscrierea</span>
               </button>
             </div>
@@ -316,7 +341,7 @@
               <div id="saved-management-links" class="saved-management-links"></div>
             </section>
 
-            <div class="hint-box">
+            <div id="signup-hint" class="hint-box">
               Primele 18 persoane înscrise apar cu verde. Restul rămân pe lista de așteptare,
               marcați cu galben.
             </div>
@@ -396,6 +421,6 @@
       </div>
     </div>
 
-    <script src="/app.js?v=20260906-6" defer></script>
+    <script src="/app.js?v=20260921-1" defer></script>
   </body>
 </html>

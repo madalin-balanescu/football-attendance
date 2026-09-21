@@ -213,6 +213,15 @@ function makeElement(document, tagName, id, classNames = []) {
 function buildAppDocument() {
   const document = new FakeDocument();
   const form = makeElement(document, "form", "attendance-form");
+  makeElement(document, "section", "wednesday-member-panel", ["hidden"]);
+  makeElement(document, "input", "wednesday-member-search");
+  makeElement(document, "datalist", "wednesday-member-options");
+  makeElement(document, "small", "member-availability-copy");
+  makeElement(document, "div", "standard-signup-fields");
+  makeElement(document, "span", "signup-card-pill");
+  makeElement(document, "h3", "signup-card-title");
+  makeElement(document, "p", "signup-card-description");
+  makeElement(document, "div", "signup-hint");
   makeElement(document, "input", "person1");
   makeElement(document, "input", "person2");
   const submitButton = makeElement(document, "button", "submit-button");
@@ -288,6 +297,7 @@ function buildAppDocument() {
   makeElement(document, "svg", "theme-icon-sun", ["hidden"]);
   makeElement(document, "svg", "theme-icon-moon");
   form.reset = () => {
+    document.getElementById("wednesday-member-search").value = "";
     document.getElementById("person1").value = "";
     document.getElementById("person2").value = "";
   };

@@ -31,6 +31,7 @@ except ImportError:  # pragma: no cover - local fallback when dependency is not 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 DB_PATH = BASE_DIR / "data" / "attendance.db"
+WEDNESDAY_MEMBERS_PATH = BASE_DIR / "config" / "wednesday_members.json"
 DATABASE_URL = os.environ.get("DATABASE_URL")
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
@@ -80,6 +81,39 @@ REMOVAL_LABELS = {
     "organizer": "Eliminat de organizator",
     "self": "Retragere voluntară",
 }
+MEMBER_ID_PATTERN = re.compile(r"^[a-z0-9-]{1,64}$")
+
+
+def load_wednesday_members() -> tuple[dict[str, str], ...]:
+    payload = json.loads(WEDNESDAY_MEMBERS_PATH.read_text(encoding="utf-8"))
+    raw_members = payload.get("members")
+    if not isinstance(raw_members, list):
+        raise RuntimeError("Lista membrilor de miercuri nu este validă.")
+
+    members: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
+    seen_phones: set[str] = set()
+    for raw_member in raw_members:
+        if not isinstance(raw_member, dict):
+            raise RuntimeError("Lista membrilor de miercuri nu este validă.")
+        member_id = str(raw_member.get("id", "")).strip().lower()
+        name = str(raw_member.get("name", "")).strip()
+        phone = str(raw_member.get("phone", "")).strip()
+        if (
+            not MEMBER_ID_PATTERN.fullmatch(member_id)
+            or not phone
+            or member_id in seen_ids
+            or phone in seen_phones
+        ):
+            raise RuntimeError("Lista membrilor de miercuri conține date invalide sau duplicate.")
+        seen_ids.add(member_id)
+        seen_phones.add(phone)
+        members.append({"id": member_id, "name": name, "phone": phone})
+    return tuple(members)
+
+
+WEDNESDAY_MEMBERS = load_wednesday_members()
+WEDNESDAY_MEMBERS_BY_ID = {member["id"]: member for member in WEDNESDAY_MEMBERS}
 
 
 class RestoreTargetNotEmptyError(Exception):
@@ -167,6 +201,13 @@ def ensure_database() -> None:
             )
             connection.execute(
                 """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_registrations_active_member
+                ON registrations (event_key, week_key, member_id)
+                WHERE member_id IS NOT NULL AND is_active = TRUE
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS registration_rate_limits (
                     id BIGSERIAL PRIMARY KEY,
                     ip_hash TEXT NOT NULL,
@@ -233,6 +274,13 @@ def ensure_database() -> None:
                 """
                 CREATE INDEX IF NOT EXISTS idx_registrations_management_token
                 ON registrations (management_token_hash)
+                """
+            )
+            connection.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_registrations_active_member
+                ON registrations (event_key, week_key, member_id)
+                WHERE member_id IS NOT NULL AND is_active = 1
                 """
             )
             connection.execute(
@@ -340,6 +388,12 @@ def ensure_registration_columns(connection) -> None:
             ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP
             """
         )
+        connection.execute(
+            """
+            ALTER TABLE registrations
+            ADD COLUMN IF NOT EXISTS member_id TEXT
+            """
+        )
         return
 
     existing_columns = {
@@ -388,6 +442,13 @@ def ensure_registration_columns(connection) -> None:
             """
             ALTER TABLE registrations
             ADD COLUMN cancelled_at TEXT
+            """
+        )
+    if "member_id" not in existing_columns:
+        connection.execute(
+            """
+            ALTER TABLE registrations
+            ADD COLUMN member_id TEXT
             """
         )
 
@@ -646,6 +707,17 @@ def signup_window_for_week(
     return start, end
 
 
+def wednesday_member_only_until(week_key: str) -> datetime:
+    year_text, week_text = week_key.split("-W")
+    return datetime.fromisocalendar(int(year_text), int(week_text), 2).replace(
+        hour=12,
+        minute=0,
+        second=0,
+        microsecond=0,
+        tzinfo=APP_TIMEZONE,
+    )
+
+
 def signup_window_payload(
     now: datetime | None = None,
     event_key: str = FRIDAY_EVENT,
@@ -663,6 +735,18 @@ def signup_window_payload(
     else:
         is_open = schedule_open
 
+    member_only_until = (
+        wednesday_member_only_until(week_key) if event_key == WEDNESDAY_EVENT else None
+    )
+    member_only = bool(
+        is_open
+        and event_key == WEDNESDAY_EVENT
+        and schedule_open
+        and member_only_until is not None
+        and current_time < member_only_until
+    )
+    registration_phase = "member_only" if member_only else "open" if is_open else "closed"
+
     if current_time < start:
         next_open = start
     else:
@@ -673,8 +757,13 @@ def signup_window_payload(
         message = "Înscrierile sunt oprite manual de administrator."
     elif current_mode == "force_open":
         message = "Înscrierile sunt deschise manual de administrator."
+    elif member_only:
+        message = (
+            "Înscrierile sunt deschise doar pentru membrii grupului WhatsApp. "
+            "Jucătorii externi pot fi adăugați de marți, ora 12:00."
+        )
     elif is_open and event_key == WEDNESDAY_EVENT:
-        message = "Înscrierile sunt deschise acum, de luni la 19:30 până miercuri la 19:30."
+        message = "Înscrierile sunt deschise pentru toți jucătorii până miercuri la 19:30."
     elif is_open:
         message = "Înscrierile sunt deschise acum, de joi la 11:59 până vineri la 23:59."
     elif current_time < start:
@@ -713,6 +802,8 @@ def signup_window_payload(
         "serverNow": current_time.isoformat(),
         "timezone": "Europe/Bucharest",
         "event": event_key,
+        "registrationPhase": registration_phase,
+        "memberOnlyUntil": member_only_until.isoformat() if member_only_until else None,
     }
 
 
@@ -875,6 +966,49 @@ def fetch_inactive_registrations(
     return inactive
 
 
+def fetch_active_member_ids(week_key: str) -> set[str]:
+    with get_connection() as connection:
+        if using_postgres():
+            rows = connection.execute(
+                """
+                SELECT member_id
+                FROM registrations
+                WHERE week_key = %s
+                  AND event_key = %s
+                  AND is_active = TRUE
+                  AND member_id IS NOT NULL
+                """,
+                (week_key, WEDNESDAY_EVENT),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """
+                SELECT member_id
+                FROM registrations
+                WHERE week_key = ?
+                  AND event_key = ?
+                  AND is_active = 1
+                  AND member_id IS NOT NULL
+                """,
+                (week_key, WEDNESDAY_EVENT),
+            ).fetchall()
+    return {str(row[0]) for row in rows}
+
+
+def wednesday_members_payload(week_key: str) -> list[dict[str, object]]:
+    registered_member_ids = fetch_active_member_ids(week_key)
+    return [
+        {
+            "id": member["id"],
+            "name": member["name"],
+            "phone": member["phone"],
+            "label": f'{member["name"] or "Fără nume"} — {member["phone"]}',
+            "available": member["id"] not in registered_member_ids,
+        }
+        for member in WEDNESDAY_MEMBERS
+    ]
+
+
 def format_database_datetime(value: object) -> str | None:
     if value is None:
         return None
@@ -894,7 +1028,7 @@ def fetch_registration_backup_rows(
             rows = connection.execute(
                 """
                 SELECT id, submitted_name, created_at, preferred_role, assigned_team,
-                       management_token_hash, is_active, cancelled_at, removal_key
+                       management_token_hash, is_active, cancelled_at, removal_key, member_id
                 FROM registrations
                 WHERE week_key = %s AND event_key = %s
                 ORDER BY created_at ASC, id ASC
@@ -906,7 +1040,7 @@ def fetch_registration_backup_rows(
             rows = connection.execute(
                 """
                 SELECT id, submitted_name, created_at, preferred_role, assigned_team,
-                       management_token_hash, is_active, cancelled_at, removal_key
+                       management_token_hash, is_active, cancelled_at, removal_key, member_id
                 FROM registrations
                 WHERE week_key = ? AND event_key = ?
                 ORDER BY datetime(created_at) ASC, id ASC
@@ -944,6 +1078,7 @@ def fetch_registration_backup_rows(
                 "cancelledAt": format_database_datetime(
                     row[7] if using_postgres() else row["cancelled_at"]
                 ),
+                "memberId": row[9] if using_postgres() else row["member_id"],
             }
         )
     return backup_rows
@@ -1037,6 +1172,11 @@ def parse_registration_backup(
         if token_hash is not None and not re.fullmatch(r"[0-9a-f]{64}", token_hash):
             raise ValueError("Backupul conține un hash de administrare invalid.")
 
+        raw_member_id = raw_registration.get("memberId")
+        member_id = str(raw_member_id).strip().lower() if raw_member_id else None
+        if member_id is not None and not MEMBER_ID_PATTERN.fullmatch(member_id):
+            raise ValueError("Backupul conține un membru WhatsApp invalid.")
+
         active = raw_registration.get("active", True)
         if not isinstance(active, bool):
             raise ValueError("Backupul conține o stare de înscriere invalidă.")
@@ -1076,6 +1216,7 @@ def parse_registration_backup(
                 "role": role,
                 "team": team,
                 "managementTokenHash": token_hash,
+                "memberId": member_id,
                 "active": active,
                 "cancelledAt": cancelled_at,
             }
@@ -1123,9 +1264,10 @@ def restore_registration_backup(
                         management_token_hash,
                         is_active,
                         cancelled_at,
-                        removal_key
+                        removal_key,
+                        member_id
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         registration["name"],
@@ -1138,6 +1280,7 @@ def restore_registration_backup(
                         registration["active"],
                         registration["cancelledAt"],
                         registration.get("removalKey"),
+                        registration["memberId"],
                     ),
                 )
             else:
@@ -1153,9 +1296,10 @@ def restore_registration_backup(
                         management_token_hash,
                         is_active,
                         cancelled_at,
-                        removal_key
+                        removal_key,
+                        member_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         registration["name"],
@@ -1172,6 +1316,7 @@ def restore_registration_backup(
                             else None
                         ),
                         registration.get("removalKey"),
+                        registration["memberId"],
                     ),
                 )
         insert_removal_history(connection, removal_history or [])
@@ -1187,29 +1332,33 @@ def insert_registration_rows(
     event_key: str,
     created_at: datetime,
     management_token_hash: str | None = None,
+    member_ids: list[str | None] | None = None,
 ) -> list[int]:
+    normalized_member_ids = member_ids or [None] * len(names)
+    if len(normalized_member_ids) != len(names):
+        raise ValueError("Numărul de membri nu corespunde înscrierilor.")
     inserted_ids: list[int] = []
     if using_postgres():
-        for name in names:
+        for name, member_id in zip(names, normalized_member_ids):
             row = connection.execute(
                 """
                 INSERT INTO registrations (
-                    submitted_name, created_at, week_key, event_key, management_token_hash
+                    submitted_name, created_at, week_key, event_key, management_token_hash, member_id
                 )
-                VALUES (%s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (name, created_at, week_key, event_key, management_token_hash),
+                (name, created_at, week_key, event_key, management_token_hash, member_id),
             ).fetchone()
             inserted_ids.append(int(row[0]))
     else:
-        for name in names:
+        for name, member_id in zip(names, normalized_member_ids):
             cursor = connection.execute(
                 """
                 INSERT INTO registrations (
-                    submitted_name, created_at, week_key, event_key, management_token_hash
+                    submitted_name, created_at, week_key, event_key, management_token_hash, member_id
                 )
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     name,
@@ -1217,6 +1366,7 @@ def insert_registration_rows(
                     week_key,
                     event_key,
                     management_token_hash,
+                    member_id,
                 ),
             )
             inserted_ids.append(int(cursor.lastrowid))
@@ -1227,11 +1377,19 @@ def insert_registrations(
     names: list[str],
     week_key: str,
     event_key: str = FRIDAY_EVENT,
+    member_ids: list[str | None] | None = None,
 ) -> list[int]:
     event_key = normalize_event(event_key)
     created_at = datetime.now(APP_TIMEZONE).replace(microsecond=0, tzinfo=None)
     with get_connection() as connection:
-        return insert_registration_rows(connection, names, week_key, event_key, created_at)
+        return insert_registration_rows(
+            connection,
+            names,
+            week_key,
+            event_key,
+            created_at,
+            member_ids=member_ids,
+        )
 
 
 def insert_rate_limited_registrations(
@@ -1241,6 +1399,7 @@ def insert_rate_limited_registrations(
     ip_hash: str,
     now: datetime | None = None,
     management_token_hash: str | None = None,
+    member_ids: list[str | None] | None = None,
 ) -> tuple[list[int], dict[str, object] | None]:
     event_key = normalize_event(event_key)
     current_time = now or datetime.now(APP_TIMEZONE)
@@ -1251,11 +1410,20 @@ def insert_rate_limited_registrations(
     created_at = current_time.replace(microsecond=0, tzinfo=None)
     recent_cutoff = created_at - REGISTRATION_SHORT_WINDOW
     retention_cutoff = created_at - RATE_LIMIT_RETENTION
+    normalized_member_ids = member_ids or [None] * len(names)
+    if len(normalized_member_ids) != len(names):
+        raise ValueError("Numărul de membri nu corespunde înscrierilor.")
 
     with get_connection() as connection:
         if using_postgres():
             lock_key = f"{ip_hash}:{event_key}:{week_key}"
             connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (lock_key,))
+            for member_id in sorted(value for value in normalized_member_ids if value):
+                member_lock_key = f"member:{event_key}:{week_key}:{member_id}"
+                connection.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                    (member_lock_key,),
+                )
             connection.execute(
                 "DELETE FROM registration_rate_limits WHERE created_at < %s",
                 (retention_cutoff,),
@@ -1269,6 +1437,7 @@ def insert_rate_limited_registrations(
                 """,
                 (ip_hash, event_key, week_key),
             ).fetchall()
+
         else:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
@@ -1284,6 +1453,24 @@ def insert_rate_limited_registrations(
                 """,
                 (ip_hash, event_key, week_key),
             ).fetchall()
+
+        for member_id in (value for value in normalized_member_ids if value):
+            placeholder = "%s" if using_postgres() else "?"
+            active_value = "TRUE" if using_postgres() else "1"
+            existing_member = connection.execute(
+                f"""
+                SELECT 1
+                FROM registrations
+                WHERE event_key = {placeholder}
+                  AND week_key = {placeholder}
+                  AND member_id = {placeholder}
+                  AND is_active = {active_value}
+                LIMIT 1
+                """,
+                (event_key, week_key, member_id),
+            ).fetchone()
+            if existing_member is not None:
+                return [], {"reason": "member_registered", "memberId": member_id}
 
         submission_times = [
             row[0] if isinstance(row[0], datetime) else datetime.fromisoformat(str(row[0]))
@@ -1308,6 +1495,7 @@ def insert_rate_limited_registrations(
             event_key,
             created_at,
             management_token_hash,
+            normalized_member_ids,
         )
         if using_postgres():
             connection.execute(
@@ -1755,6 +1943,8 @@ def attendance_payload(
     }
     if include_inactive:
         payload["inactiveRegistrations"] = fetch_inactive_registrations(active_week, event_key)
+    if event_key == WEDNESDAY_EVENT:
+        payload["wednesdayMembers"] = wednesday_members_payload(active_week)
     return payload
 
 
@@ -1915,14 +2105,6 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON body")
             return
 
-        names = sanitize_names(payload)
-        if not names:
-            self.send_json(
-                {"error": "Completează cel puțin un nume."},
-                status=HTTPStatus.BAD_REQUEST,
-            )
-            return
-
         cleanup_wednesday_registrations()
         event_key = normalize_event(str(payload.get("event", FRIDAY_EVENT)))
         request_time = datetime.now(APP_TIMEZONE)
@@ -1937,6 +2119,30 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             )
             return
 
+        member_ids: list[str | None] | None = None
+        if signup_window["registrationPhase"] == "member_only":
+            member_id = str(payload.get("memberId", "")).strip().lower()
+            member = WEDNESDAY_MEMBERS_BY_ID.get(member_id)
+            if member is None:
+                self.send_json(
+                    {
+                        "error": "Selectează numele tău din lista membrilor WhatsApp.",
+                        "signupWindow": signup_window,
+                    },
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+                return
+            names = [member["name"] or member["phone"]]
+            member_ids = [member_id]
+        else:
+            names = sanitize_names(payload)
+            if not names:
+                self.send_json(
+                    {"error": "Completează cel puțin un nume."},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+                return
+
         week_key = current_week_key(request_time)
         client_ip = client_ip_from_request(
             self.headers,
@@ -1950,8 +2156,18 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             hash_client_ip(client_ip),
             now=request_time,
             management_token_hash=management_token_hash,
+            member_ids=member_ids,
         )
         if rate_limit:
+            if rate_limit["reason"] == "member_registered":
+                self.send_json(
+                    {
+                        "error": "Acest membru este deja înscris la meciul de miercuri.",
+                        "signupWindow": signup_window,
+                    },
+                    status=HTTPStatus.CONFLICT,
+                )
+                return
             retry_after = int(rate_limit["retryAfter"])
             if rate_limit["reason"] == "weekly":
                 error = (

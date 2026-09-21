@@ -724,6 +724,65 @@ h1 {
   transform: translateY(-1px);
 }
 
+.member-signup-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.member-window-note {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid rgba(19, 135, 95, 0.2);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(19, 135, 95, 0.12), rgba(121, 189, 79, 0.1));
+}
+
+.member-window-note strong {
+  color: var(--text);
+  font-size: 1.02rem;
+}
+
+.member-window-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.member-phase-badge {
+  justify-self: start;
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #0b6847;
+  background: rgba(19, 135, 95, 0.13);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.member-search-field {
+  margin-bottom: 4px;
+}
+
+.field-help {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+:root[data-theme="dark"] .member-window-note {
+  border-color: rgba(85, 213, 155, 0.18);
+  background: linear-gradient(135deg, rgba(26, 112, 77, 0.28), rgba(65, 115, 48, 0.2));
+}
+
+:root[data-theme="dark"] .member-phase-badge {
+  color: #bff2d5;
+  background: rgba(85, 213, 155, 0.14);
+}
+
 .hint-box {
   margin-top: 24px;
   margin-bottom: 0;

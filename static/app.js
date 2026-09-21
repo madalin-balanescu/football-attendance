@@ -1,6 +1,15 @@
 const form = document.getElementById("attendance-form");
 const person1Input = document.getElementById("person1");
 const person2Input = document.getElementById("person2");
+const wednesdayMemberPanel = document.getElementById("wednesday-member-panel");
+const wednesdayMemberSearch = document.getElementById("wednesday-member-search");
+const wednesdayMemberOptions = document.getElementById("wednesday-member-options");
+const memberAvailabilityCopy = document.getElementById("member-availability-copy");
+const standardSignupFields = document.getElementById("standard-signup-fields");
+const signupCardPill = document.getElementById("signup-card-pill");
+const signupCardTitle = document.getElementById("signup-card-title");
+const signupCardDescription = document.getElementById("signup-card-description");
+const signupHint = document.getElementById("signup-hint");
 const submitButton = document.getElementById("submit-button");
 const submitButtonLabel = submitButton.querySelector(".button-label");
 const submissionOverlay = document.getElementById("submission-overlay");
@@ -90,8 +99,8 @@ const EVENT_CONTENT = {
     kicker: "Meciul de miercuri",
     title: "Prezență la fotbal - Miercuri",
     description:
-      "Completează formularul pentru a te înscrie la meciul de miercuri, programat între orele 19:30 și 21:30. Poți trimite maximum 2 persoane într-o singură înscriere.",
-    schedule: "Înscrierile încep în fiecare luni la ora 19:30.",
+      "Meciul de miercuri este programat între orele 19:30 și 21:30. Înscrierea se face în două etape: mai întâi membrii grupului WhatsApp, apoi și jucătorii externi.",
+    schedule: "Luni 19:30 – marți 12:00: membri WhatsApp. După 12:00: și jucători externi.",
     dateSubtitle: "Miercuri, 19:30 - 21:30",
     locationName: "D&C Sport - Siraj",
     locationUrl:
@@ -106,6 +115,9 @@ let isSignupWindowOpen = true;
 let currentSignupMode = "auto";
 let isScheduleOpen = true;
 let lastSeenRegistrationId = null;
+let currentRegistrationPhase = "open";
+let wednesdayMembers = [];
+let isSubmissionLoading = false;
 
 const DASHBOARD_CACHE_KEY = `football-attendance:${eventKey}`;
 const MANAGEMENT_LINKS_KEY = "football-attendance:management-links";
@@ -139,6 +151,117 @@ function applyEventContent() {
   teamsPageLink.classList.toggle("hidden", eventKey !== "friday");
 }
 
+function isMemberOnlyPhase() {
+  return eventKey === "wednesday" && currentRegistrationPhase === "member_only";
+}
+
+function syncRegistrationFieldAvailability(isLocked = !isSignupWindowOpen) {
+  const memberOnly = isMemberOnlyPhase();
+  wednesdayMemberSearch.disabled = isLocked || !memberOnly;
+  wednesdayMemberSearch.required = memberOnly && !isLocked;
+  person1Input.disabled = isLocked || memberOnly;
+  person1Input.required = !memberOnly && !isLocked;
+  person2Input.disabled = isLocked || memberOnly;
+  syncSubmitButtonState();
+}
+
+function renderWednesdayMemberOptions() {
+  wednesdayMemberOptions.innerHTML = "";
+  const availableMembers = wednesdayMembers.filter((member) => member.available !== false);
+  availableMembers.forEach((member) => {
+    const option = document.createElement("option");
+    option.value = member.label;
+    option.setAttribute("value", member.label);
+    option.dataset.memberId = member.id;
+    wednesdayMemberOptions.appendChild(option);
+  });
+
+  const unavailableCount = wednesdayMembers.length - availableMembers.length;
+  memberAvailabilityCopy.textContent = unavailableCount > 0
+    ? `${availableMembers.length} membri disponibili · ${unavailableCount} deja înscriși`
+    : `${availableMembers.length} membri disponibili`;
+  syncSubmitButtonState();
+}
+
+function findSelectedWednesdayMember() {
+  const selectedValue = wednesdayMemberSearch.value.trim().toLocaleLowerCase("ro-RO");
+  return wednesdayMembers.find(
+    (member) => member.available !== false
+      && String(member.label).trim().toLocaleLowerCase("ro-RO") === selectedValue,
+  );
+}
+
+function syncSubmitButtonState() {
+  const isOffline = document.body.classList.contains("is-offline");
+  const requiredFieldDisabled = isMemberOnlyPhase()
+    ? wednesdayMemberSearch.disabled
+    : person1Input.disabled;
+  const isMemberSelectionMissing = isMemberOnlyPhase() && !findSelectedWednesdayMember();
+
+  submitButton.disabled = isSubmissionLoading
+    || !isSignupWindowOpen
+    || isOffline
+    || requiredFieldDisabled
+    || isMemberSelectionMissing;
+
+  if (isSubmissionLoading) {
+    submitButtonLabel.textContent = "Se trimite...";
+  } else if (!isSignupWindowOpen) {
+    submitButtonLabel.textContent = "Înscrierile sunt închise";
+  } else if (isOffline) {
+    submitButtonLabel.textContent = "Necesită conexiune";
+  } else {
+    submitButtonLabel.textContent = isMemberOnlyPhase() ? "Înscrie-mă" : "Trimite înscrierea";
+  }
+}
+
+function handleWednesdayMemberSelectionChange() {
+  if (!isMemberOnlyPhase()) {
+    return;
+  }
+
+  if (findSelectedWednesdayMember()) {
+    formMessage.textContent = "";
+  }
+  syncSubmitButtonState();
+}
+
+function updateWednesdaySignupExperience(payload = {}) {
+  if (eventKey !== "wednesday") {
+    return;
+  }
+
+  if (Array.isArray(payload.wednesdayMembers)) {
+    wednesdayMembers = payload.wednesdayMembers;
+    renderWednesdayMemberOptions();
+  }
+
+  currentRegistrationPhase = String(
+    payload.signupWindow?.registrationPhase || currentRegistrationPhase || "open",
+  );
+  const memberOnly = isMemberOnlyPhase();
+  document.body.dataset.registrationPhase = currentRegistrationPhase;
+  wednesdayMemberPanel.classList.toggle("hidden", !memberOnly);
+  standardSignupFields.classList.toggle("hidden", memberOnly);
+
+  if (memberOnly) {
+    signupCardPill.textContent = "Acces membri WhatsApp";
+    signupCardTitle.textContent = "Alege-te din lista grupului";
+    signupCardDescription.textContent =
+      "Caută după nume sau număr de telefon și adaugă câte un jucător pe rând.";
+    signupHint.textContent =
+      "După confirmare, poți selecta următorul membru disponibil. Fiecare membru poate fi înscris o singură dată.";
+  } else {
+    signupCardPill.textContent = "Rezervă-ți locul";
+    signupCardTitle.textContent = "Trimite prezența pentru tine sau pentru încă un coleg";
+    signupCardDescription.textContent =
+      "Completezi rapid, iar lista se actualizează instant în ordinea înscrierii.";
+    signupHint.textContent =
+      "Primele 18 persoane înscrise apar cu verde. Restul rămân pe lista de așteptare, marcați cu galben.";
+  }
+  syncRegistrationFieldAvailability();
+}
+
 function setAppReady(isReady) {
   document.body.classList.toggle("app-booting", !isReady);
 }
@@ -150,7 +273,9 @@ function setConnectionStatus(isOnline, isUsingCache = false) {
   if (!isOnline) {
     setFormLocked(true);
     setSubmissionLoading(false);
+    return;
   }
+  syncSubmitButtonState();
 }
 
 function cacheDashboardPayload(payload) {
@@ -287,17 +412,8 @@ function applyTheme(theme) {
 }
 
 function setSubmissionLoading(isLoading) {
-  const cannotSubmit = !isSignupWindowOpen || document.body.classList.contains("is-offline");
-  submitButton.disabled = isLoading || cannotSubmit;
-  if (isLoading) {
-    submitButtonLabel.textContent = "Se trimite...";
-  } else if (!isSignupWindowOpen) {
-    submitButtonLabel.textContent = "Înscrierile sunt închise";
-  } else if (document.body.classList.contains("is-offline")) {
-    submitButtonLabel.textContent = "Necesită conexiune";
-  } else {
-    submitButtonLabel.textContent = "Trimite înscrierea";
-  }
+  isSubmissionLoading = isLoading;
+  syncSubmitButtonState();
   submissionOverlay.classList.toggle("hidden", !isLoading);
   submissionOverlay.setAttribute("aria-hidden", String(!isLoading));
 }
@@ -306,8 +422,7 @@ function setFormLocked(isLocked) {
   formControlsShell.classList.toggle("is-locked", isLocked);
   formLockedOverlay.classList.toggle("hidden", !isLocked);
   formLockedOverlay.setAttribute("aria-hidden", String(!isLocked));
-  person1Input.disabled = isLocked;
-  person2Input.disabled = isLocked;
+  syncRegistrationFieldAvailability(isLocked);
 }
 
 async function parseJsonResponse(response) {
@@ -339,6 +454,7 @@ function syncDashboardPayload(payload) {
     matchDateDisplay.textContent = payload.weekLabel;
   }
 
+  updateWednesdaySignupExperience(payload);
   updateSignupWindowState(payload.signupWindow);
   renderRows(Array.isArray(payload.registrations) ? payload.registrations : []);
 }
@@ -439,6 +555,10 @@ function updateSignupWindowState(signupWindow) {
     return;
   }
 
+  if (eventKey === "wednesday" && signupWindow.registrationPhase) {
+    updateWednesdaySignupExperience({ signupWindow });
+  }
+
   isSignupWindowOpen = Boolean(signupWindow.isOpen);
   isScheduleOpen = Boolean(signupWindow.scheduleOpen);
   currentSignupMode = String(signupWindow.mode || "auto");
@@ -452,14 +572,7 @@ function updateSignupWindowState(signupWindow) {
   setFormLocked(!isSignupWindowOpen);
   updateSignupModeButtons();
 
-  if (!isSignupWindowOpen) {
-    submitButton.disabled = true;
-    submitButtonLabel.textContent = "Înscrierile sunt închise";
-    return;
-  }
-
-  submitButton.disabled = false;
-  submitButtonLabel.textContent = "Trimite înscrierea";
+  syncSubmitButtonState();
 }
 
 function renderRows(registrations) {
@@ -616,19 +729,28 @@ async function submitRegistration(event) {
   }
 
   formMessage.textContent = "";
+  const selectedMember = isMemberOnlyPhase() ? findSelectedWednesdayMember() : null;
+  if (isMemberOnlyPhase() && !selectedMember) {
+    formMessage.textContent = "Selectează numele tău din lista membrilor WhatsApp.";
+    wednesdayMemberSearch.focus?.();
+    return;
+  }
   setSubmissionLoading(true);
 
   try {
+    const requestBody = isMemberOnlyPhase()
+      ? { memberId: selectedMember.id, event: eventKey }
+      : {
+          person1: person1Input.value,
+          person2: person2Input.value,
+          event: eventKey,
+        };
     const response = await fetch("/api/registrations", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        person1: person1Input.value,
-        person2: person2Input.value,
-        event: eventKey,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     const payload = await parseJsonResponse(response);
@@ -638,6 +760,7 @@ async function submitRegistration(event) {
     }
 
     form.reset();
+    wednesdayMemberSearch.value = "";
     syncDashboardPayload(payload);
     cacheDashboardPayload(payload);
     formMessage.textContent = payload.message;
@@ -839,6 +962,8 @@ function toggleTheme() {
 }
 
 form.addEventListener("submit", submitRegistration);
+wednesdayMemberSearch.addEventListener("input", handleWednesdayMemberSelectionChange);
+wednesdayMemberSearch.addEventListener("change", handleWednesdayMemberSelectionChange);
 adminLoginForm.addEventListener("submit", loginAdmin);
 adminToggle.addEventListener("click", () => setAdminExpanded(!isAdminExpanded));
 forceOpenButton.addEventListener("click", () => setSignupMode("force_open"));
