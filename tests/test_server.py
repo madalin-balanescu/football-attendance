@@ -323,12 +323,14 @@ class AttendanceServerTestCase(unittest.TestCase):
     def test_wednesday_member_roster_contains_extracted_contacts(self) -> None:
         members = server.wednesday_members_payload(self.week_key)
 
-        self.assertEqual(len(members), 36)
+        self.assertEqual(len(members), 37)
         self.assertEqual(members[0]["label"], "Danyashy — +40 741 253 240")
-        self.assertIn(
-            "Fără nume — +40 745 241 217",
-            [member["label"] for member in members],
-        )
+        labels = [member["label"] for member in members]
+        self.assertIn("Bogdan Asavei — +40 745 241 217", labels)
+        self.assertIn("Madalin — +40 747 861 127", labels)
+        self.assertIn("Vlad — +40 752 400 795", labels)
+        self.assertIn("Alexandru Vasile — +40 763 831 624", labels)
+        self.assertIn("Madalin Balanescu — +40 742 237 210", labels)
 
     def test_friday_and_wednesday_registrations_are_isolated(self) -> None:
         server.insert_registrations(["Vineri"], self.week_key)

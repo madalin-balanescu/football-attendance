@@ -30,11 +30,12 @@
     { "id": "wm-028", "name": "Edy", "phone": "+40 770 880 544" },
     { "id": "wm-029", "name": "Bardasila", "phone": "+40 773 323 833" },
     { "id": "wm-030", "name": "Geardetect", "phone": "+40 773 858 789" },
-    { "id": "wm-031", "name": "", "phone": "+40 745 241 217" },
-    { "id": "wm-032", "name": "", "phone": "+40 747 861 127" },
-    { "id": "wm-033", "name": "", "phone": "+40 752 400 795" },
-    { "id": "wm-034", "name": "", "phone": "+40 763 831 624" },
+    { "id": "wm-031", "name": "Bogdan Asavei", "phone": "+40 745 241 217" },
+    { "id": "wm-032", "name": "Madalin", "phone": "+40 747 861 127" },
+    { "id": "wm-033", "name": "Vlad", "phone": "+40 752 400 795" },
+    { "id": "wm-034", "name": "Alexandru Vasile", "phone": "+40 763 831 624" },
     { "id": "wm-035", "name": "Cosmin Andries", "phone": "+40 751 830 222" },
-    { "id": "wm-036", "name": "Sebastian P", "phone": "+40 750 617 779" }
+    { "id": "wm-036", "name": "Sebastian P", "phone": "+40 750 617 779" },
+    { "id": "wm-037", "name": "Madalin Balanescu", "phone": "+40 742 237 210" }
   ]
 }
