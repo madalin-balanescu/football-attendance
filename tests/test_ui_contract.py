@@ -89,8 +89,11 @@ class FrontendContractTestCase(unittest.TestCase):
         app_script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
         self.assertIn("navigator.serviceWorker.controller", app_script)
         self.assertIn('addEventListener("controllerchange"', app_script)
-        self.assertIn('/styles.css?v=20260921-1', attendance_page)
-        self.assertIn('/app.js?v=20260921-1', attendance_page)
+        self.assertIn('/styles.css?v=20260923-1', attendance_page)
+        self.assertIn('/app.js?v=20260923-1', attendance_page)
+        self.assertIn('role="combobox"', attendance_page)
+        self.assertIn('role="listbox"', attendance_page)
+        self.assertNotIn('<datalist', attendance_page)
         enhancements = (STATIC_DIR / "ui-enhancements.css").read_text(encoding="utf-8")
         self.assertIn("grid-auto-columns: minmax(0, 1fr)", enhancements)
 

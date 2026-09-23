@@ -766,6 +766,52 @@ h1 {
   margin-bottom: 4px;
 }
 
+.member-search-label {
+  margin-bottom: 10px;
+}
+
+.member-options {
+  max-height: 260px;
+  max-height: min(260px, 45dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card-solid);
+  box-shadow: 0 12px 28px rgba(23, 53, 42, 0.12);
+}
+
+.member-option {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.member-option:last-child {
+  border-bottom: 0;
+}
+
+.member-option:hover,
+.member-option[aria-selected="true"] {
+  background: var(--surface-tint);
+}
+
+.member-empty {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
 .field-help {
   color: var(--muted);
   font-size: 0.8rem;

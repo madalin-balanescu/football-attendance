@@ -4,6 +4,7 @@ const person2Input = document.getElementById("person2");
 const wednesdayMemberPanel = document.getElementById("wednesday-member-panel");
 const wednesdayMemberSearch = document.getElementById("wednesday-member-search");
 const wednesdayMemberOptions = document.getElementById("wednesday-member-options");
+const wednesdayMemberEmpty = document.getElementById("wednesday-member-empty");
 const memberAvailabilityCopy = document.getElementById("member-availability-copy");
 const standardSignupFields = document.getElementById("standard-signup-fields");
 const signupCardPill = document.getElementById("signup-card-pill");
@@ -117,6 +118,11 @@ let isScheduleOpen = true;
 let lastSeenRegistrationId = null;
 let currentRegistrationPhase = "open";
 let wednesdayMembers = [];
+let filteredWednesdayMembers = [];
+let isWednesdayMemberListOpen = false;
+let showAllWednesdayMembers = false;
+let activeWednesdayMemberIndex = -1;
+let wednesdayMemberBlurTimer = null;
 let isSubmissionLoading = false;
 
 const DASHBOARD_CACHE_KEY = `football-attendance:${eventKey}`;
@@ -159,6 +165,9 @@ function syncRegistrationFieldAvailability(isLocked = !isSignupWindowOpen) {
   const memberOnly = isMemberOnlyPhase();
   wednesdayMemberSearch.disabled = isLocked || !memberOnly;
   wednesdayMemberSearch.required = memberOnly && !isLocked;
+  if (wednesdayMemberSearch.disabled) {
+    closeWednesdayMemberOptions();
+  }
   person1Input.disabled = isLocked || memberOnly;
   person1Input.required = !memberOnly && !isLocked;
   person2Input.disabled = isLocked || memberOnly;
@@ -168,19 +177,105 @@ function syncRegistrationFieldAvailability(isLocked = !isSignupWindowOpen) {
 function renderWednesdayMemberOptions() {
   wednesdayMemberOptions.innerHTML = "";
   const availableMembers = wednesdayMembers.filter((member) => member.available !== false);
-  availableMembers.forEach((member) => {
-    const option = document.createElement("option");
-    option.value = member.label;
-    option.setAttribute("value", member.label);
-    option.dataset.memberId = member.id;
+  const query = showAllWednesdayMembers ? "" : normalizeWednesdayMemberSearch(wednesdayMemberSearch.value);
+  filteredWednesdayMembers = availableMembers.filter((member) =>
+    normalizeWednesdayMemberSearch(member.label).includes(query),
+  );
+  filteredWednesdayMembers.forEach((member, index) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "member-option";
+    option.id = `wednesday-member-option-${index}`;
+    option.tabIndex = -1;
+    option.textContent = member.label;
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", "false");
+    option.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      selectWednesdayMember(member);
+    });
+    option.addEventListener("click", () => selectWednesdayMember(member));
     wednesdayMemberOptions.appendChild(option);
   });
+  activeWednesdayMemberIndex = -1;
+  wednesdayMemberSearch.removeAttribute("aria-activedescendant");
+  const showOptions = isWednesdayMemberListOpen && filteredWednesdayMembers.length > 0;
+  wednesdayMemberOptions.classList.toggle("hidden", !showOptions);
+  wednesdayMemberEmpty.classList.toggle("hidden", !isWednesdayMemberListOpen || showOptions);
+  wednesdayMemberSearch.setAttribute("aria-expanded", String(showOptions));
 
   const unavailableCount = wednesdayMembers.length - availableMembers.length;
   memberAvailabilityCopy.textContent = unavailableCount > 0
     ? `${availableMembers.length} membri disponibili · ${unavailableCount} deja înscriși`
     : `${availableMembers.length} membri disponibili`;
   syncSubmitButtonState();
+}
+
+function normalizeWednesdayMemberSearch(value) {
+  return String(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .trim().toLocaleLowerCase("ro-RO");
+}
+
+function closeWednesdayMemberOptions() {
+  isWednesdayMemberListOpen = false;
+  activeWednesdayMemberIndex = -1;
+  wednesdayMemberOptions.classList.add("hidden");
+  wednesdayMemberEmpty.classList.add("hidden");
+  wednesdayMemberSearch.setAttribute("aria-expanded", "false");
+  wednesdayMemberSearch.removeAttribute("aria-activedescendant");
+}
+
+function setActiveWednesdayMember(index) {
+  activeWednesdayMemberIndex = index;
+  [...wednesdayMemberOptions.children].forEach((option, optionIndex) => {
+    option.setAttribute("aria-selected", String(optionIndex === index));
+  });
+  const option = wednesdayMemberOptions.children[index];
+  if (option) {
+    wednesdayMemberSearch.setAttribute("aria-activedescendant", option.id);
+    option.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function selectWednesdayMember(member) {
+  if (wednesdayMemberSearch.disabled || member.available === false) {
+    return;
+  }
+  wednesdayMemberSearch.value = member.label;
+  formMessage.textContent = "";
+  closeWednesdayMemberOptions();
+  syncSubmitButtonState();
+  wednesdayMemberSearch.blur?.();
+}
+
+function handleWednesdayMemberKeydown(event) {
+  if (event.key === "Escape") {
+    closeWednesdayMemberOptions();
+    return;
+  }
+  if (event.key === "Enter" && isWednesdayMemberListOpen && activeWednesdayMemberIndex >= 0) {
+    event.preventDefault();
+    selectWednesdayMember(filteredWednesdayMembers[activeWednesdayMemberIndex]);
+    return;
+  }
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+    return;
+  }
+  event.preventDefault();
+  if (!isWednesdayMemberListOpen) {
+    isWednesdayMemberListOpen = true;
+    showAllWednesdayMembers = true;
+    renderWednesdayMemberOptions();
+  }
+  if (!filteredWednesdayMembers.length) {
+    return;
+  }
+  const offset = event.key === "ArrowDown" ? 1 : -1;
+  const nextIndex = activeWednesdayMemberIndex < 0
+    ? (offset > 0 ? 0 : filteredWednesdayMembers.length - 1)
+    : (activeWednesdayMemberIndex + offset + filteredWednesdayMembers.length)
+      % filteredWednesdayMembers.length;
+  setActiveWednesdayMember(nextIndex);
 }
 
 function findSelectedWednesdayMember() {
@@ -220,6 +315,9 @@ function handleWednesdayMemberSelectionChange() {
     return;
   }
 
+  showAllWednesdayMembers = false;
+  isWednesdayMemberListOpen = true;
+  renderWednesdayMemberOptions();
   if (findSelectedWednesdayMember()) {
     formMessage.textContent = "";
   }
@@ -761,6 +859,7 @@ async function submitRegistration(event) {
 
     form.reset();
     wednesdayMemberSearch.value = "";
+    closeWednesdayMemberOptions();
     syncDashboardPayload(payload);
     cacheDashboardPayload(payload);
     formMessage.textContent = payload.message;
@@ -963,7 +1062,20 @@ function toggleTheme() {
 
 form.addEventListener("submit", submitRegistration);
 wednesdayMemberSearch.addEventListener("input", handleWednesdayMemberSelectionChange);
-wednesdayMemberSearch.addEventListener("change", handleWednesdayMemberSelectionChange);
+wednesdayMemberSearch.addEventListener("change", syncSubmitButtonState);
+wednesdayMemberSearch.addEventListener("focus", () => {
+  clearTimeout(wednesdayMemberBlurTimer);
+  if (wednesdayMemberSearch.disabled) {
+    return;
+  }
+  showAllWednesdayMembers = true;
+  isWednesdayMemberListOpen = true;
+  renderWednesdayMemberOptions();
+});
+wednesdayMemberSearch.addEventListener("blur", () => {
+  wednesdayMemberBlurTimer = setTimeout(closeWednesdayMemberOptions, 120);
+});
+wednesdayMemberSearch.addEventListener("keydown", handleWednesdayMemberKeydown);
 adminLoginForm.addEventListener("submit", loginAdmin);
 adminToggle.addEventListener("click", () => setAdminExpanded(!isAdminExpanded));
 forceOpenButton.addEventListener("click", () => setSignupMode("force_open"));

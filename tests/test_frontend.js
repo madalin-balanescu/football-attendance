@@ -401,6 +401,70 @@ test("app.js shows the searchable member picker during Wednesday priority access
   assert.equal(document.getElementById("submit-button").disabled, true);
 });
 
+test("Wednesday member suggestions render below the field and support search, touch, and keyboard", async () => {
+  const document = buildAppDocument();
+  const members = [
+    { id: "wm-001", label: "Șerban — +40 741 111 111", available: true },
+    { id: "wm-002", label: "Ana — +40 742 222 222", available: true },
+    { id: "wm-003", label: "Mihai — +40 743 333 333", available: false },
+  ];
+  const { context } = loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: false } },
+    { body: appPayload({
+      signupWindow: { isOpen: true, scheduleOpen: true, mode: "auto", registrationPhase: "member_only" },
+      wednesdayMembers: members,
+    }) },
+  ], { pathname: "/miercuri" });
+  await flush();
+
+  const search = document.getElementById("wednesday-member-search");
+  const options = document.getElementById("wednesday-member-options");
+  const empty = document.getElementById("wednesday-member-empty");
+  const submit = document.getElementById("submit-button");
+  search.listeners.focus();
+  assert.equal(options.classList.contains("hidden"), false);
+  assert.equal(search.getAttribute("aria-expanded"), "true");
+  assert.equal(options.children.length, 2);
+
+  search.value = "serban";
+  search.listeners.input();
+  assert.equal(options.children.length, 1);
+  assert.equal(options.children[0].textContent, members[0].label);
+  let prevented = false;
+  options.children[0].listeners.pointerdown({ preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(search.value, members[0].label);
+  assert.equal(options.classList.contains("hidden"), true);
+  assert.equal(submit.disabled, false);
+
+  search.listeners.focus();
+  search.listeners.keydown({ key: "ArrowUp", preventDefault() {} });
+  assert.equal(search.getAttribute("aria-activedescendant"), options.children[1].id);
+  search.listeners.keydown({ key: "Escape", preventDefault() {} });
+
+  search.value = "+40 742";
+  search.listeners.input();
+  assert.equal(options.children.length, 1);
+  assert.equal(options.children[0].textContent, members[1].label);
+  search.listeners.keydown({ key: "ArrowDown", preventDefault() {} });
+  assert.equal(search.getAttribute("aria-activedescendant"), options.children[0].id);
+  search.listeners.keydown({ key: "Enter", preventDefault() {} });
+  assert.equal(search.value, members[1].label);
+  assert.equal(search.getAttribute("aria-expanded"), "false");
+
+  search.value = "Mihai";
+  search.listeners.input();
+  assert.equal(options.classList.contains("hidden"), true);
+  assert.equal(empty.classList.contains("hidden"), false);
+  assert.equal(submit.disabled, true);
+  search.listeners.keydown({ key: "Escape", preventDefault() {} });
+  assert.equal(empty.classList.contains("hidden"), true);
+
+  context.updateWednesdaySignupExperience({ signupWindow: { registrationPhase: "open" } });
+  assert.equal(search.disabled, true);
+  assert.equal(search.getAttribute("aria-expanded"), "false");
+});
+
 test("app.js locks form and button when signup window is closed", async () => {
   const document = buildAppDocument();
   loadScript("app.js", document, [

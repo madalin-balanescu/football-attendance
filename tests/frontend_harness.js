@@ -112,6 +112,10 @@ class FakeElement {
     return this.attributes[name];
   }
 
+  removeAttribute(name) {
+    delete this.attributes[name];
+  }
+
   cloneNode(deep = false) {
     const clone = new FakeElement(this.tagName, this.ownerDocument, this.id);
     clone.dataset = { ...this.dataset };
@@ -215,7 +219,8 @@ function buildAppDocument() {
   const form = makeElement(document, "form", "attendance-form");
   makeElement(document, "section", "wednesday-member-panel", ["hidden"]);
   makeElement(document, "input", "wednesday-member-search");
-  makeElement(document, "datalist", "wednesday-member-options");
+  makeElement(document, "div", "wednesday-member-options", ["hidden"]);
+  makeElement(document, "p", "wednesday-member-empty", ["hidden"]);
   makeElement(document, "small", "member-availability-copy");
   makeElement(document, "div", "standard-signup-fields");
   makeElement(document, "span", "signup-card-pill");
