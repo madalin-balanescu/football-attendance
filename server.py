@@ -1967,7 +1967,23 @@ def event_from_query(query: str) -> str:
 
 
 def push_enabled() -> bool:
-    return bool(webpush and VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT)
+    return bool(webpush and VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and valid_vapid_subject(VAPID_SUBJECT))
+
+
+def valid_vapid_subject(subject: object) -> bool:
+    if not isinstance(subject, str):
+        return False
+    if subject.startswith("mailto:"):
+        return bool(re.fullmatch(r"mailto:[^@\s]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", subject))
+    if not subject.startswith("https://"):
+        return False
+    parsed = urlparse(subject)
+    return bool(
+        parsed.hostname
+        and parsed.netloc == parsed.hostname
+        and re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", parsed.hostname)
+        and not (parsed.path or parsed.params or parsed.query or parsed.fragment)
+    )
 
 
 def valid_push_endpoint(endpoint: object) -> bool:
@@ -2089,7 +2105,8 @@ def send_match_notifications(event_key: str, action: str, names: list[str]) -> N
             if WebPushException and isinstance(error, WebPushException) and error.status_code in (404, 410):
                 remove_expired_push_endpoint(endpoint)
             else:
-                print("Match push delivery failed.", file=sys.stderr)
+                status = getattr(error, "status_code", None)
+                print(f"Match push delivery failed: {type(error).__name__}, status={status}.", file=sys.stderr)
 
 
 def queue_match_notification(event_key: str, week_key: str, action: str, names: list[str]) -> None:

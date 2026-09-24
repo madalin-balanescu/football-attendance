@@ -1355,6 +1355,18 @@ class AttendanceServerTestCase(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertFalse(state["subscribed"])
 
+    def test_invalid_vapid_subject_disables_push_before_subscribing(self) -> None:
+        with patch.multiple(server, webpush=Mock(), VAPID_PUBLIC_KEY="public", VAPID_PRIVATE_KEY="private"):
+            for subject in ("https://github.com/example/football-attendance", "https://example.com/", "", "mailto:invalid"):
+                with self.subTest(subject=subject), patch.object(server, "VAPID_SUBJECT", subject):
+                    status, config, _ = self.dispatch("GET", "/api/push/config")
+                    self.assertEqual(status, 200)
+                    self.assertFalse(config["enabled"])
+                    self.assertEqual(config["publicKey"], "")
+            for subject in ("https://football-attendance-izln.onrender.com", "mailto:admin@example.com"):
+                with self.subTest(subject=subject), patch.object(server, "VAPID_SUBJECT", subject):
+                    self.assertTrue(server.push_enabled())
+
     def test_push_subscription_rejects_untrusted_delivery_hosts(self) -> None:
         self.assertTrue(server.valid_push_endpoint("https://web.push.apple.com/subscription"))
         self.assertTrue(server.valid_push_endpoint("https://db3.notify.windows.com/subscription"))

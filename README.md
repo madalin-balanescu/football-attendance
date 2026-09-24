@@ -89,8 +89,10 @@ Then open:
 
 - `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
   Enable browser push notifications. Keep the key pair stable between deployments;
-  `VAPID_SUBJECT` should be a contact URI such as `mailto:admin@example.com`.
-  If any value is missing, the notification control reports that push is unavailable.
+  `VAPID_SUBJECT` must be a contact URI such as `mailto:admin@example.com` or
+  an HTTPS origin with no path, such as `https://example.com`. A profile URL with
+  a path is rejected by the push library. If configuration is missing or invalid,
+  the notification control reports that push is unavailable.
 
 - `HOST`
   Defaults to `0.0.0.0`.
