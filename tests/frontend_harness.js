@@ -277,6 +277,9 @@ function buildAppDocument() {
   makeElement(document, "section", "saved-management-panel", ["hidden"]);
   makeElement(document, "div", "saved-management-links");
   makeElement(document, "a", "withdraw-shortcut", ["hidden"]);
+  makeElement(document, "div", "notification-panel", ["hidden"]);
+  makeElement(document, "button", "notification-toggle");
+  makeElement(document, "p", "notification-message");
   makeElement(document, "section", "admin-panel", ["hidden"]);
   makeElement(document, "form", "admin-login-form");
   makeElement(document, "input", "admin-password");
@@ -413,6 +416,8 @@ function loadScript(scriptName, document, responses, options = {}) {
       setItem: (key, value) => storage.set(key, String(value)),
     },
     fetch: createFetchMock([...responses], requests),
+    navigator: options.navigator,
+    atob: (value) => Buffer.from(value, "base64").toString("binary"),
     console,
     JSON,
     URLSearchParams,
@@ -420,6 +425,8 @@ function loadScript(scriptName, document, responses, options = {}) {
     setTimeout,
     clearTimeout,
   };
+  if (options.Notification) context.window.Notification = options.Notification;
+  if (options.PushManager) context.window.PushManager = options.PushManager;
   context.globalThis = context;
   vm.runInNewContext(source, context, { filename: scriptName });
   return { context, document, requests, storage };

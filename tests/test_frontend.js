@@ -1,5 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
 
 const {
   buildAppDocument,
@@ -107,6 +110,136 @@ test("app.js bootstraps dashboard and clears boot state after initial fetches", 
     renderedRow.children[2].classList.contains("name-cell"),
     true,
   );
+});
+
+test("app.js lets a visitor opt in and out of notifications for the selected match", async () => {
+  const document = buildAppDocument();
+  const subscription = {
+    endpoint: "https://fcm.googleapis.com/fcm/send/browser",
+    toJSON() { return { endpoint: this.endpoint, keys: { p256dh: "A".repeat(87), auth: "B".repeat(22) } }; },
+  };
+  let activeSubscription = null;
+  const pushManager = {
+    async getSubscription() { return activeSubscription; },
+    async subscribe(options) {
+      assert.equal(options.userVisibleOnly, true);
+      assert.equal(options.applicationServerKey.length, 65);
+      activeSubscription = subscription;
+      return subscription;
+    },
+  };
+  const serviceWorker = {
+    controller: null,
+    ready: Promise.resolve({ pushManager }),
+    listeners: {},
+    addEventListener(type, listener) { this.listeners[type] = listener; },
+    register: async () => ({ update() {} }),
+  };
+  const publicKey = Buffer.alloc(65, 1).toString("base64url");
+  const { requests } = loadScript("app.js", document, [
+    { body: { enabled: true, publicKey } },
+    { body: { enabled: true, authenticated: false } },
+    { body: appPayload() },
+    { status: 201, body: { subscribed: true } },
+    { body: { subscribed: false } },
+    { body: appPayload({ registrations: [
+      { id: 1, position: 1, name: "Ion", createdAt: "2026-03-19 12:00:00", status: "confirmed" },
+      { id: 2, position: 2, name: "Vlad", createdAt: "2026-03-19 12:01:00", status: "confirmed" },
+    ] }) },
+  ], {
+    navigator: { serviceWorker, onLine: true },
+    Notification: { requestPermission: async () => "granted" },
+    PushManager: function PushManager() {},
+  });
+
+  await flush();
+  const toggle = document.getElementById("notification-toggle");
+  assert.equal(document.getElementById("notification-panel").classList.contains("hidden"), false);
+  await toggle.listeners.click();
+  assert.equal(toggle.textContent, "Dezactivează notificările");
+  assert.equal(requests[3].url, "/api/push/subscribe");
+  assert.equal(JSON.parse(requests[3].options.body).event, "friday");
+  await toggle.listeners.click();
+  assert.equal(toggle.textContent, "Activează notificările");
+  assert.equal(requests[4].url, "/api/push/unsubscribe");
+  serviceWorker.listeners.message({ data: { type: "ROSTER_CHANGED", event: "friday" } });
+  await flush();
+  assert.equal(document.getElementById("attendance-table-body").children.length, 2);
+});
+
+test("Wednesday signup identifies this browser's existing Friday push subscription", async () => {
+  const document = buildAppDocument();
+  const pushSubscription = {
+    endpoint: "https://fcm.googleapis.com/fcm/send/browser",
+    keys: { p256dh: "A".repeat(87), auth: "B".repeat(22) },
+  };
+  const registration = {
+    pushManager: { async getSubscription() { return { toJSON: () => pushSubscription }; } },
+  };
+  const serviceWorker = {
+    controller: null,
+    addEventListener() {},
+    register: async () => ({ update() {} }),
+    getRegistration: async () => registration,
+  };
+  const { context, requests } = loadScript("app.js", document, [
+    { body: { enabled: false } },
+    { body: { enabled: true, authenticated: false } },
+    { body: appPayload() },
+    { status: 201, body: { ...appPayload(), message: "Înscrierea a fost salvată." } },
+  ], {
+    pathname: "/miercuri",
+    navigator: { serviceWorker, onLine: true },
+    Notification: { permission: "granted" },
+    PushManager: function PushManager() {},
+  });
+
+  await flush();
+  document.getElementById("person1").value = "Mihai";
+  await context.submitRegistration({ preventDefault() {} });
+  const submitted = JSON.parse(requests.find((request) => request.options.method === "POST" && request.url === "/api/registrations").options.body);
+  assert.equal(submitted.event, "wednesday");
+  assert.deepEqual(submitted.pushSubscription, pushSubscription);
+});
+
+test("service worker displays match alerts, refreshes open pages, and opens the matching roster", async () => {
+  const listeners = {};
+  const notices = [];
+  const messages = [];
+  const opened = [];
+  const client = {
+    url: "https://fotbal.example/miercuri",
+    postMessage(message) { messages.push(message); },
+    async focus() { opened.push("focused"); },
+  };
+  const self = {
+    location: { origin: "https://fotbal.example" },
+    addEventListener(type, handler) { listeners[type] = handler; },
+    registration: { async showNotification(title, options) { notices.push({ title, options }); } },
+    clients: {
+      async matchAll() { return [client]; },
+      async openWindow(url) { opened.push(url); },
+    },
+  };
+  const source = fs.readFileSync(path.join(__dirname, "..", "static", "service-worker.js"), "utf8");
+  vm.runInNewContext(source, { self, URL, Promise });
+  let pending;
+  listeners.push({
+    data: { json: () => ({ event: "wednesday", title: "Fotbal miercuri", body: "Ion s-a înscris." }) },
+    waitUntil(promise) { pending = promise; },
+  });
+  await pending;
+  assert.equal(notices[0].options.body, "Ion s-a înscris.");
+  assert.equal(notices[0].options.data.event, "wednesday");
+  assert.equal(messages[0].type, "ROSTER_CHANGED");
+  assert.equal(messages[0].event, "wednesday");
+
+  listeners.notificationclick({
+    notification: { data: { event: "wednesday" }, close() {} },
+    waitUntil(promise) { pending = promise; },
+  });
+  await pending;
+  assert.deepEqual(opened, ["focused"]);
 });
 
 test("app.js shows a full state when all 18 confirmed places are occupied", async () => {

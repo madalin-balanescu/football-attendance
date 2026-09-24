@@ -21,6 +21,7 @@ Current Friday dashboard with a populated roster and the public `Jucători retra
 - per-player withdrawal with confirmation and automatic waiting-list promotion
 - a separate mobile-friendly, public removal history for the current session
 - installable PWA shell with offline UI and last-known-list fallback
+- opt-in push notifications when a player joins or leaves the selected match
 - keyboard, reduced-motion, forced-color, and screen-reader accessibility support
 - first 18 players marked as confirmed
 - extra players placed on the waiting list
@@ -86,6 +87,11 @@ Then open:
   generate this value automatically. For an existing manually configured service, add a
   long random value in the Render environment before deploying.
 
+- `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
+  Enable browser push notifications. Keep the key pair stable between deployments;
+  `VAPID_SUBJECT` should be a contact URI such as `mailto:admin@example.com`.
+  If any value is missing, the notification control reports that push is unavailable.
+
 - `HOST`
   Defaults to `0.0.0.0`.
 
@@ -119,6 +125,39 @@ Team-builder page admin actions:
 - reset generated teams
 
 ## Signup Rules
+
+### Match notifications
+
+On the Friday or Wednesday attendance page, visitors can select **Activează notificările**
+to allow browser notifications for that match day. The browser asks for permission only
+after this click. Enabling notifications for one match switches this browser away from
+the other match's notifications; the control can also turn them off. Joining Wednesday
+removes an existing Friday subscription from the browser used for signup; Wednesday
+alerts still require opt-in. Subscriptions on other devices must be managed on those
+devices. A successful signup sends one notification for the submitted names;
+a voluntary withdrawal or individual organizer deletion sends a removal notification.
+The open attendance page refreshes its table when a matching push arrives. Rejected
+submissions, repeated withdrawals, and changes to past weeks do not send alerts.
+
+Push requires HTTPS (localhost works for local development), browser support, and a
+configured VAPID key pair. On iPhone/iPad, visitors need to add the site to the Home
+Screen before enabling web push. Push delivery also depends on the browser's push
+service and a persistent database for subscriptions; the included Render SQLite
+deployment uses temporary storage, so subscriptions disappear on a reset or redeploy.
+Use persistent PostgreSQL when reliable notifications across redeploys are required.
+
+Generate a key pair once after installing dependencies, in a private directory:
+
+```bash
+vapid --gen
+vapid --applicationServerKey
+awk 'NR > 1 && !/END/ { printf "%s", $0 }' private_key.pem
+```
+
+Set `VAPID_PUBLIC_KEY` to the `applicationServerKey` output, `VAPID_PRIVATE_KEY`
+to the single-line private-key output, and `VAPID_SUBJECT` to a contact URI. Store the
+private key in your deployment secrets, never in the repository. Preserve the same
+key pair when deploying updates so existing browser subscriptions keep working.
 
 Friday automatic mode:
 
@@ -307,6 +346,7 @@ Backend coverage includes:
 - session expiration, manual resets, and event isolation
 - history-only backups and duplicate/conflicting removal identity validation
 - backup restoration of management-token hashes and inactive state
+- push subscription validation, day isolation, and notifications for roster changes
 
 Frontend coverage includes:
 
@@ -324,6 +364,7 @@ Frontend coverage includes:
 - manifest and service-worker app-shell validation
 - team-builder rendering
 - team generation refresh behavior
+- notification permission controls and live roster refresh after push
 - separate removal-history navigation, source filtering, escaped names, empty state, public access, and offline behavior
 
 Run everything:

@@ -8,7 +8,7 @@ import unittest
 from datetime import datetime
 from http import HTTPStatus
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import server
 
@@ -1325,6 +1325,139 @@ class AttendanceServerTestCase(unittest.TestCase):
         status, _, _ = self.dispatch("POST", "/api/management/withdraw", {"registrationId": second, "confirmed": True}, authorization=f"Bearer {token_b}")
         self.assertEqual(status, 200)
         self.assertEqual([row["id"] for row in server.fetch_registrations(self.week_key)], [first])
+
+    def test_push_subscriptions_are_opt_in_and_scoped_to_each_match(self) -> None:
+        subscription = {
+            "endpoint": "https://fcm.googleapis.com/fcm/send/example",
+            "keys": {"p256dh": "A" * 87, "auth": "B" * 22},
+        }
+        with patch.multiple(server, webpush=Mock(), VAPID_PUBLIC_KEY="public", VAPID_PRIVATE_KEY="private", VAPID_SUBJECT="mailto:test@example.com"):
+            status, config, _ = self.dispatch("GET", "/api/push/config")
+            self.assertEqual(status, 200)
+            self.assertTrue(config["enabled"])
+            self.assertEqual(config["publicKey"], "public")
+
+            status, _, _ = self.dispatch("POST", "/api/push/subscribe", {"event": "friday", "subscription": subscription})
+            self.assertEqual(status, 201)
+            status, state, _ = self.dispatch("POST", "/api/push/status", {"event": "friday", "endpoint": subscription["endpoint"]})
+            self.assertEqual(status, 200)
+            self.assertTrue(state["subscribed"])
+            _, state, _ = self.dispatch("POST", "/api/push/status", {"event": "wednesday", "endpoint": subscription["endpoint"]})
+            self.assertFalse(state["subscribed"])
+
+            self.dispatch("POST", "/api/push/subscribe", {"event": "wednesday", "subscription": subscription})
+            status, state, _ = self.dispatch("POST", "/api/push/status", {"event": "friday", "endpoint": subscription["endpoint"]})
+            self.assertEqual(status, 200)
+            self.assertFalse(state["subscribed"])
+            _, state, _ = self.dispatch("POST", "/api/push/status", {"event": "wednesday", "endpoint": subscription["endpoint"]})
+            self.assertTrue(state["subscribed"])
+            status, state, _ = self.dispatch("POST", "/api/push/unsubscribe", {"event": "wednesday", "endpoint": subscription["endpoint"]})
+            self.assertEqual(status, 200)
+            self.assertFalse(state["subscribed"])
+
+    def test_push_subscription_rejects_untrusted_delivery_hosts(self) -> None:
+        self.assertTrue(server.valid_push_endpoint("https://web.push.apple.com/subscription"))
+        self.assertTrue(server.valid_push_endpoint("https://db3.notify.windows.com/subscription"))
+        self.assertTrue(server.valid_push_endpoint("https://push.services.mozilla.com/wpush/subscription"))
+        with patch.multiple(server, webpush=Mock(), VAPID_PUBLIC_KEY="public", VAPID_PRIVATE_KEY="private", VAPID_SUBJECT="mailto:test@example.com"):
+            for endpoint in ("http://127.0.0.1/private", "https://localhost/private", "https://fcm.googleapis.com:1234/send/x", "https://fcm.googleapis.com:bad/send/x", "https:///missing-host", "https://web.push.apple.com.evil.example/subscription"):
+                with self.subTest(endpoint=endpoint):
+                    status, _, _ = self.dispatch("POST", "/api/push/subscribe", {
+                        "event": "friday",
+                        "subscription": {"endpoint": endpoint, "keys": {"p256dh": "A" * 87, "auth": "B" * 22}},
+                    })
+                    self.assertEqual(status, 400)
+            with server.get_connection() as connection:
+                self.assertEqual(connection.execute("SELECT COUNT(*) FROM push_subscriptions").fetchone()[0], 0)
+
+    def test_push_delivery_targets_only_subscribers_of_changed_match(self) -> None:
+        friday_endpoint = "https://fcm.googleapis.com/fcm/send/friday"
+        wednesday_endpoint = "https://web.push.apple.com/wednesday"
+        server.save_push_subscription("friday", friday_endpoint, "A" * 87, "B" * 22)
+        server.save_push_subscription("wednesday", wednesday_endpoint, "A" * 87, "B" * 22)
+        sender = Mock()
+        with patch.multiple(server, webpush=sender, VAPID_PRIVATE_KEY="private", VAPID_SUBJECT="mailto:test@example.com"):
+            server.send_match_notifications("friday", "joined", ["Ion", "Vlad"])
+        self.assertEqual(sender.call_count, 1)
+        self.assertEqual(sender.call_args.kwargs["subscription_info"]["endpoint"], friday_endpoint)
+        notice = json.loads(sender.call_args.kwargs["data"])
+        self.assertEqual(notice["event"], "friday")
+        self.assertIn("Ion, Vlad s-au înscris", notice["body"])
+
+    def test_wednesday_signup_removes_only_that_browsers_friday_alerts(self) -> None:
+        server.set_setting("signup_mode_wednesday", "force_open")
+        endpoint = "https://fcm.googleapis.com/fcm/send/wednesday-player"
+        other_endpoint = "https://fcm.googleapis.com/fcm/send/friday-player"
+        keys = {"p256dh": "A" * 87, "auth": "B" * 22}
+        server.save_push_subscription("friday", endpoint, keys["p256dh"], keys["auth"])
+        server.save_push_subscription("friday", other_endpoint, keys["p256dh"], keys["auth"])
+        subscription = {"endpoint": endpoint, "keys": keys}
+
+        status, _, _ = self.dispatch("POST", "/api/registrations", {
+            "event": "wednesday", "person1": "", "pushSubscription": subscription,
+        })
+        self.assertEqual(status, 400)
+        self.assertTrue(server.has_push_subscription("friday", endpoint))
+
+        status, _, _ = self.dispatch("POST", "/api/registrations", {
+            "event": "wednesday", "person1": "Mihai", "pushSubscription": subscription,
+        })
+        self.assertEqual(status, 201)
+        self.assertFalse(server.has_push_subscription("friday", endpoint))
+        self.assertFalse(server.has_push_subscription("wednesday", endpoint))
+        self.assertTrue(server.has_push_subscription("friday", other_endpoint))
+
+        sender = Mock()
+        with patch.object(server, "webpush", sender):
+            server.send_match_notifications("friday", "joined", ["Ion"])
+        self.assertEqual(sender.call_count, 1)
+        self.assertEqual(sender.call_args.kwargs["subscription_info"]["endpoint"], other_endpoint)
+
+    def test_push_delivery_prunes_expired_endpoints_and_skips_past_weeks(self) -> None:
+        endpoint = "https://fcm.googleapis.com/fcm/send/expired"
+        server.save_push_subscription("friday", endpoint, "A" * 87, "B" * 22)
+        with server.get_connection() as connection:
+            connection.execute(
+                "INSERT INTO push_subscriptions (endpoint, event_key, p256dh, auth) VALUES (?, ?, ?, ?)",
+                (endpoint, "wednesday", "A" * 87, "B" * 22),
+            )
+
+        class ExpiredSubscription(Exception):
+            status_code = 410
+
+        sender = Mock(side_effect=ExpiredSubscription())
+        with patch.multiple(server, webpush=sender, WebPushException=ExpiredSubscription, VAPID_PRIVATE_KEY="private", VAPID_SUBJECT="mailto:test@example.com"):
+            server.send_match_notifications("friday", "left", ["Ion"])
+        with server.get_connection() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM push_subscriptions").fetchone()[0], 0)
+
+        with patch.multiple(server, webpush=Mock(), VAPID_PUBLIC_KEY="public", VAPID_PRIVATE_KEY="private", VAPID_SUBJECT="mailto:test@example.com"):
+            with patch.object(server.PUSH_EXECUTOR, "submit") as submit:
+                server.queue_match_notification("friday", "2020-W01", "joined", ["Ion"])
+                submit.assert_not_called()
+                server.queue_match_notification("friday", self.week_key, "joined", ["Ion"])
+                submit.assert_called_once()
+
+    def test_successful_roster_mutations_queue_join_and_leave_alerts(self) -> None:
+        server.set_setting("signup_mode", "force_open")
+        with patch.object(server, "queue_match_notification") as queue:
+            status, created, _ = self.dispatch("POST", "/api/registrations", {"event": "friday", "person1": "Ion", "person2": "Vlad"})
+            self.assertEqual(status, 201)
+            queue.assert_called_once_with("friday", self.week_key, "joined", ["Ion", "Vlad"])
+            token = str(created["managementPath"]).rsplit("/", 1)[-1]
+            queue.reset_mock()
+            status, _, _ = self.dispatch("POST", "/api/management/withdraw", {"registrationId": created["submittedRegistrationIds"][0], "confirmed": True}, authorization=f"Bearer {token}")
+            self.assertEqual(status, 200)
+            queue.assert_called_once_with("friday", self.week_key, "left", ["Ion"])
+            queue.reset_mock()
+            cookie = self.login_admin()
+            status, _, _ = self.dispatch("POST", "/api/admin/delete-registration", {"id": created["submittedRegistrationIds"][1], "event": "friday"}, cookie=cookie)
+            self.assertEqual(status, 200)
+            queue.assert_called_once_with("friday", self.week_key, "left", ["Vlad"])
+            queue.reset_mock()
+            status, _, _ = self.dispatch("POST", "/api/registrations", {"event": "friday", "person1": ""})
+            self.assertEqual(status, 400)
+            queue.assert_not_called()
 
 
 if __name__ == "__main__":

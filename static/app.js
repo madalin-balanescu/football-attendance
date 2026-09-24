@@ -73,6 +73,13 @@ const adminToggle = document.getElementById("admin-toggle");
 const adminContent = document.getElementById("admin-content");
 const adminToggleIcon = document.getElementById("admin-toggle-icon");
 const removalHistoryLink = document.getElementById("removal-history-link");
+const notificationPanel = document.getElementById("notification-panel");
+const notificationToggle = document.getElementById("notification-toggle");
+const notificationMessage = document.getElementById("notification-message");
+let notificationPublicKey = "";
+let notificationsSubscribed = false;
+let notificationRegistration = null;
+let notificationSubscription = null;
 const themeToggle = document.getElementById("theme-toggle");
 const themeToggleLabel = document.getElementById("theme-toggle-label");
 const themeIconSun = document.getElementById("theme-icon-sun");
@@ -467,10 +474,111 @@ function registerServiceWorker() {
     });
   }
 
+  navigator.serviceWorker.addEventListener("message", (message) => {
+    if (message.data?.type === "ROSTER_CHANGED" && message.data.event === eventKey) {
+      loadRegistrations().catch(() => {});
+    }
+  });
+
   navigator.serviceWorker
     .register("/service-worker.js", { updateViaCache: "none" })
     .then((registration) => registration.update())
     .catch(() => {});
+}
+
+function pushSupported() {
+  return typeof navigator !== "undefined" && "serviceWorker" in navigator
+    && "PushManager" in window && "Notification" in window;
+}
+
+function pushKeyBytes(value) {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const decoded = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
+  return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
+}
+
+async function pushRequest(path, body) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = await parseJsonResponse(response);
+  if (!response.ok) throw new Error(payload.error || "Nu am putut actualiza notificările.");
+  return payload;
+}
+
+function showNotificationState(subscribed, message = "") {
+  notificationsSubscribed = subscribed;
+  notificationToggle.textContent = subscribed ? "Dezactivează notificările" : "Activează notificările";
+  notificationMessage.textContent = message || (subscribed
+    ? "Notificările sunt active pentru acest meci."
+    : "Notificările sunt dezactivate pentru acest meci.");
+}
+
+async function loadNotificationControls() {
+  if (!pushSupported()) return;
+  notificationPanel.classList.remove("hidden");
+  try {
+    const response = await fetch("/api/push/config");
+    const config = await parseJsonResponse(response);
+    if (!response.ok || !config.enabled || !config.publicKey) {
+      notificationToggle.disabled = true;
+      notificationMessage.textContent = "Notificările nu sunt disponibile momentan.";
+      return;
+    }
+    notificationPublicKey = config.publicKey;
+    notificationRegistration = await navigator.serviceWorker.ready;
+    notificationSubscription = await notificationRegistration.pushManager.getSubscription();
+    if (notificationSubscription) {
+      const status = await pushRequest("/api/push/status", { event: eventKey, endpoint: notificationSubscription.endpoint });
+      showNotificationState(Boolean(status.subscribed));
+    } else {
+      showNotificationState(false);
+    }
+    notificationToggle.disabled = false;
+  } catch {
+    notificationMessage.textContent = "Nu am putut verifica notificările. Încearcă din nou după reîncărcare.";
+  }
+}
+
+async function toggleNotifications() {
+  notificationToggle.disabled = true;
+  try {
+    if (notificationsSubscribed) {
+      if (notificationSubscription) {
+        await pushRequest("/api/push/unsubscribe", { event: eventKey, endpoint: notificationSubscription.endpoint });
+      }
+      showNotificationState(false);
+    } else {
+      if (window.Notification.permission === "denied") {
+        throw new Error("Permisiunea pentru notificări a fost refuzată.");
+      }
+      if (!notificationSubscription) {
+        notificationSubscription = await notificationRegistration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: pushKeyBytes(notificationPublicKey),
+        });
+      }
+      await pushRequest("/api/push/subscribe", { event: eventKey, subscription: notificationSubscription.toJSON() });
+      showNotificationState(true);
+    }
+  } catch (error) {
+    notificationMessage.textContent = error.message || "Notificările nu au putut fi actualizate.";
+  } finally {
+    notificationToggle.disabled = false;
+  }
+}
+
+async function pushSubscriptionForSignup() {
+  if (!pushSupported()) return null;
+  try {
+    const registration = notificationRegistration || await navigator.serviceWorker.getRegistration?.();
+    const subscription = notificationSubscription || await registration?.pushManager.getSubscription();
+    return subscription?.toJSON() || null;
+  } catch {
+    return null;
+  }
 }
 
 function bindConnectivityEvents() {
@@ -843,6 +951,10 @@ async function submitRegistration(event) {
           person2: person2Input.value,
           event: eventKey,
         };
+    if (eventKey === "wednesday") {
+      const pushSubscription = await pushSubscriptionForSignup();
+      if (pushSubscription) requestBody.pushSubscription = pushSubscription;
+    }
     const response = await fetch("/api/registrations", {
       method: "POST",
       headers: {
@@ -1094,6 +1206,7 @@ themeToggle.addEventListener("click", toggleTheme);
 copyManagementLinkButton.addEventListener("click", () =>
   copyManagementLink(successManagementLink.getAttribute("href"), copyManagementLinkButton),
 );
+notificationToggle.addEventListener("click", toggleNotifications);
 
 applyEventContent();
 applyTheme(currentTheme);
@@ -1101,6 +1214,7 @@ setAdminExpanded(false);
 setAppReady(false);
 bindConnectivityEvents();
 registerServiceWorker();
+loadNotificationControls();
 renderSavedManagementLinks();
 
 Promise.allSettled([loadAdminStatus(), loadRegistrations()]).then((results) => {

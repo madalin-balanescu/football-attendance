@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "football-attendance-";
-const CACHE_NAME = `${CACHE_PREFIX}v20`;
-const ASSET_VERSION = "20260923-1";
+const CACHE_NAME = `${CACHE_PREFIX}v22`;
+const ASSET_VERSION = "20260924-2";
 const APP_SHELL = [
   "/",
   "/miercuri",
@@ -89,4 +89,34 @@ self.addEventListener("fetch", (event) => {
         .catch(async () => (await caches.match(request)) || Response.error()),
     );
   }
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = {};
+  }
+  if (!payload || !["friday", "wednesday"].includes(payload.event)) return;
+  event.waitUntil(Promise.all([
+    self.registration.showNotification(payload.title || "Lista de fotbal a fost actualizată", {
+      body: payload.body || "Verifică lista curentă.",
+      icon: "/app-icon-192.png",
+      data: { event: payload.event },
+    }),
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      clients.forEach((client) => client.postMessage({ type: "ROSTER_CHANGED", event: payload.event }));
+    }),
+  ]));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const path = event.notification.data?.event === "wednesday" ? "/miercuri" : "/";
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
+    const existing = clients.find((client) => new URL(client.url).pathname === path);
+    if (existing) return existing.focus();
+    return self.clients.openWindow(path);
+  }));
 });

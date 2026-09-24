@@ -10,6 +10,7 @@ import re
 import secrets
 import sqlite3
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections import defaultdict
 from http.cookies import SimpleCookie
@@ -27,6 +28,12 @@ try:
 except ImportError:  # pragma: no cover - local fallback when dependency is not installed yet.
     psycopg = None
 
+try:
+    from pywebpush import WebPushException, webpush
+except ImportError:  # pragma: no cover - local fallback when dependency is not installed yet.
+    WebPushException = None
+    webpush = None
+
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -37,6 +44,16 @@ HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 RATE_LIMIT_SECRET = os.environ.get("RATE_LIMIT_SECRET") or ADMIN_PASSWORD
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
+VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "")
+PUSH_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="match-push")
+PUSH_ENDPOINT_HOSTS = {
+    "fcm.googleapis.com",
+    "push.services.mozilla.com",
+    "updates.push.services.mozilla.com",
+    "updates-push.services.mozaws.net",
+}
 MAX_NAMES_PER_SUBMISSION = 2
 GREEN_LIMIT = 18
 ADMIN_SESSION_HOURS = 12
@@ -344,6 +361,22 @@ def ensure_database() -> None:
             """
         )
         archive_inactive_registrations(connection)
+
+    with get_connection() as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                endpoint TEXT NOT NULL,
+                event_key TEXT NOT NULL,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+                PRIMARY KEY (endpoint, event_key)
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_push_subscriptions_event ON push_subscriptions (event_key)"
+        )
 
     set_setting("signup_mode", "auto", only_if_missing=True)
     set_setting("signup_mode_wednesday", "auto", only_if_missing=True)
@@ -1400,6 +1433,7 @@ def insert_rate_limited_registrations(
     now: datetime | None = None,
     management_token_hash: str | None = None,
     member_ids: list[str | None] | None = None,
+    push_subscription: tuple[str, str, str] | None = None,
 ) -> tuple[list[int], dict[str, object] | None]:
     event_key = normalize_event(event_key)
     current_time = now or datetime.now(APP_TIMEZONE)
@@ -1512,6 +1546,17 @@ def insert_rate_limited_registrations(
                 VALUES (?, ?, ?, ?)
                 """,
                 (ip_hash, event_key, week_key, created_at.strftime("%Y-%m-%d %H:%M:%S")),
+            )
+        if event_key == WEDNESDAY_EVENT and push_subscription:
+            endpoint, p256dh, auth = push_subscription
+            if using_postgres():
+                connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"push:{endpoint}",))
+            placeholder = "%s" if using_postgres() else "?"
+            connection.execute(
+                f"""DELETE FROM push_subscriptions
+                    WHERE endpoint = {placeholder} AND event_key = {placeholder}
+                    AND p256dh = {placeholder} AND auth = {placeholder}""",
+                (endpoint, FRIDAY_EVENT, p256dh, auth),
             )
         return inserted_ids, None
 
@@ -1921,6 +1966,147 @@ def event_from_query(query: str) -> str:
     return normalize_event(params.get("event", [FRIDAY_EVENT])[0])
 
 
+def push_enabled() -> bool:
+    return bool(webpush and VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT)
+
+
+def valid_push_endpoint(endpoint: object) -> bool:
+    if not isinstance(endpoint, str) or len(endpoint) > 2048:
+        return False
+    try:
+        parsed = urlparse(endpoint)
+        hostname = parsed.hostname or ""
+        return (
+            parsed.scheme == "https"
+            and (
+                hostname in PUSH_ENDPOINT_HOSTS
+                or hostname.endswith(".push.apple.com")
+                or hostname.endswith(".notify.windows.com")
+            )
+            and parsed.port in (None, 443)
+            and not parsed.username
+            and not parsed.password
+            and not parsed.fragment
+        )
+    except ValueError:
+        return False
+
+
+def parse_push_subscription(payload: dict[str, object]) -> tuple[str, str, str, str]:
+    event_key = payload.get("event")
+    subscription = payload.get("subscription")
+    if not isinstance(event_key, str) or event_key not in EVENT_KEYS or not isinstance(subscription, dict):
+        raise ValueError("Abonamentul pentru notificări este invalid.")
+    endpoint = subscription.get("endpoint")
+    keys = subscription.get("keys")
+    if not valid_push_endpoint(endpoint) or not isinstance(keys, dict):
+        raise ValueError("Abonamentul pentru notificări este invalid.")
+    p256dh = keys.get("p256dh")
+    auth = keys.get("auth")
+    if not all(
+        isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]+", value)
+        for value in (p256dh, auth)
+    ) or not (80 <= len(p256dh) <= 100 and 16 <= len(auth) <= 32):
+        raise ValueError("Cheile abonamentului sunt invalide.")
+    return event_key, endpoint, p256dh, auth
+
+
+def save_push_subscription(event_key: str, endpoint: str, p256dh: str, auth: str) -> None:
+    placeholder = "%s" if using_postgres() else "?"
+    with get_connection() as connection:
+        if using_postgres():
+            connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"push:{endpoint}",))
+        connection.execute(
+            f"DELETE FROM push_subscriptions WHERE endpoint = {placeholder} AND event_key <> {placeholder}",
+            (endpoint, event_key),
+        )
+        connection.execute(
+            f"""INSERT INTO push_subscriptions (endpoint, event_key, p256dh, auth)
+                VALUES ({', '.join([placeholder] * 4)})
+                ON CONFLICT (endpoint, event_key) DO UPDATE SET
+                    p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth""",
+            (endpoint, event_key, p256dh, auth),
+        )
+
+
+def remove_push_subscription(event_key: str, endpoint: str) -> None:
+    placeholder = "%s" if using_postgres() else "?"
+    with get_connection() as connection:
+        connection.execute(
+            f"DELETE FROM push_subscriptions WHERE event_key = {placeholder} AND endpoint = {placeholder}",
+            (event_key, endpoint),
+        )
+
+
+def remove_expired_push_endpoint(endpoint: str) -> None:
+    placeholder = "%s" if using_postgres() else "?"
+    with get_connection() as connection:
+        connection.execute(
+            f"DELETE FROM push_subscriptions WHERE endpoint = {placeholder}",
+            (endpoint,),
+        )
+
+
+def has_push_subscription(event_key: str, endpoint: str) -> bool:
+    placeholder = "%s" if using_postgres() else "?"
+    with get_connection() as connection:
+        return connection.execute(
+            f"SELECT 1 FROM push_subscriptions WHERE event_key = {placeholder} AND endpoint = {placeholder}",
+            (event_key, endpoint),
+        ).fetchone() is not None
+
+
+def send_match_notifications(event_key: str, action: str, names: list[str]) -> None:
+    placeholder = "%s" if using_postgres() else "?"
+    with get_connection() as connection:
+        subscriptions = connection.execute(
+            f"SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE event_key = {placeholder}",
+            (event_key,),
+        ).fetchall()
+    if not subscriptions:
+        return
+
+    day = "miercuri" if event_key == WEDNESDAY_EVENT else "vineri"
+    verb = "s-a înscris" if action == "joined" else "s-a retras"
+    if len(names) > 1:
+        verb = "s-au înscris" if action == "joined" else "s-au retras"
+    notification = json.dumps({
+        "event": event_key,
+        "title": f"Fotbal {day}: lista actualizată",
+        "body": f"{', '.join(names)} {verb}. Verifică lista curentă."[:180],
+    }, ensure_ascii=False)
+    for endpoint, p256dh, auth in subscriptions:
+        try:
+            webpush(
+                subscription_info={"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": auth}},
+                data=notification,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": VAPID_SUBJECT},
+                ttl=86400,
+                timeout=5,
+            )
+        except Exception as error:
+            if WebPushException and isinstance(error, WebPushException) and error.status_code in (404, 410):
+                remove_expired_push_endpoint(endpoint)
+            else:
+                print("Match push delivery failed.", file=sys.stderr)
+
+
+def queue_match_notification(event_key: str, week_key: str, action: str, names: list[str]) -> None:
+    if push_enabled() and names and week_key == current_week_key():
+        PUSH_EXECUTOR.submit(send_match_notifications, event_key, action, names)
+
+
+def fetch_registration_identity(registration_id: int, event_key: str) -> tuple[str, str] | None:
+    placeholder = "%s" if using_postgres() else "?"
+    with get_connection() as connection:
+        row = connection.execute(
+            f"SELECT submitted_name, week_key FROM registrations WHERE id = {placeholder} AND event_key = {placeholder}",
+            (registration_id, event_key),
+        ).fetchone()
+    return (str(row[0]), str(row[1])) if row else None
+
+
 def attendance_payload(
     event_key: str = FRIDAY_EVENT,
     week_key: str | None = None,
@@ -2011,6 +2197,9 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/push/config":
+            self.send_json({"enabled": push_enabled(), "publicKey": VAPID_PUBLIC_KEY if push_enabled() else ""})
+            return
         if parsed.path == "/api/removal-history":
             self.handle_removal_history(event_from_query(parsed.query))
             return
@@ -2058,6 +2247,9 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path in {"/api/push/subscribe", "/api/push/unsubscribe", "/api/push/status"}:
+            self.handle_push_subscription(parsed.path)
+            return
         if parsed.path == "/api/management/withdraw":
             self.handle_management_withdrawal()
             return
@@ -2143,6 +2335,17 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
                 )
                 return
 
+        push_subscription = None
+        if event_key == WEDNESDAY_EVENT and payload.get("pushSubscription") is not None:
+            try:
+                _, endpoint, p256dh, auth = parse_push_subscription({
+                    "event": event_key,
+                    "subscription": payload["pushSubscription"],
+                })
+                push_subscription = (endpoint, p256dh, auth)
+            except ValueError:
+                pass
+
         week_key = current_week_key(request_time)
         client_ip = client_ip_from_request(
             self.headers,
@@ -2157,6 +2360,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             now=request_time,
             management_token_hash=management_token_hash,
             member_ids=member_ids,
+            push_subscription=push_subscription,
         )
         if rate_limit:
             if rate_limit["reason"] == "member_registered":
@@ -2197,7 +2401,33 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
         response["submittedRegistrationIds"] = submitted_registration_ids
         response["managementPath"] = f"/inscriere/{management_token}"
         response["signupWindow"] = signup_window
+        queue_match_notification(event_key, week_key, "joined", names)
         self.send_json(response, status=HTTPStatus.CREATED)
+
+    def handle_push_subscription(self, path: str) -> None:
+        if not push_enabled():
+            self.send_json({"error": "Notificările nu sunt configurate."}, status=HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        payload = self.read_json_body(max_length=4096)
+        if payload is None:
+            return
+        try:
+            if path == "/api/push/subscribe":
+                event_key, endpoint, p256dh, auth = parse_push_subscription(payload)
+                save_push_subscription(event_key, endpoint, p256dh, auth)
+                self.send_json({"subscribed": True}, status=HTTPStatus.CREATED)
+                return
+            event_key = payload.get("event")
+            endpoint = payload.get("endpoint")
+            if not isinstance(event_key, str) or event_key not in EVENT_KEYS or not valid_push_endpoint(endpoint):
+                raise ValueError("Abonamentul pentru notificări este invalid.")
+            if path == "/api/push/unsubscribe":
+                remove_push_subscription(event_key, endpoint)
+                self.send_json({"subscribed": False})
+            else:
+                self.send_json({"subscribed": has_push_subscription(event_key, endpoint)})
+        except ValueError as error:
+            self.send_json({"error": str(error)}, status=HTTPStatus.BAD_REQUEST)
 
     def handle_management_view(self) -> None:
         token = management_token_from_authorization(self.headers.get("Authorization"))
@@ -2268,6 +2498,9 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
         submission["message"] = (
             "Jucătorul a fost retras. Lista a fost actualizată automat."
         )
+        withdrawn_row = next((row for row in submission["registrations"] if row["id"] == registration_id), None)
+        if withdrawn_row:
+            queue_match_notification(submission["eventKey"], submission["weekKey"], "left", [withdrawn_row["name"]])
         self.send_json(submission)
 
     def do_DELETE(self) -> None:
@@ -2508,6 +2741,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             return
 
         event_key = normalize_event(str(payload.get("event", FRIDAY_EVENT)))
+        identity = fetch_registration_identity(registration_id, event_key)
         deleted = delete_registration_by_id(registration_id, event_key)
         if deleted == 0:
             self.send_json(
@@ -2525,6 +2759,8 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
                 "message": "Înscrierea selectată a fost ștearsă.",
             }
         )
+        if identity:
+            queue_match_notification(event_key, identity[1], "left", [identity[0]])
         self.send_json(response)
 
     def handle_admin_update_role(self) -> None:
@@ -2647,17 +2883,24 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             }
         )
 
-    def read_json_body(self) -> dict[str, object] | None:
+    def read_json_body(self, max_length: int | None = None) -> dict[str, object] | None:
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             self.send_error(HTTPStatus.BAD_REQUEST, "Invalid Content-Length")
             return None
 
+        if content_length < 0 or (max_length is not None and content_length > max_length):
+            self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request body too large")
+            return None
+
         raw_body = self.rfile.read(content_length)
         try:
-            return json.loads(raw_body.decode("utf-8"))
-        except json.JSONDecodeError:
+            payload = json.loads(raw_body.decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError
+            return payload
+        except (ValueError, UnicodeDecodeError):
             self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON body")
             return None
 
