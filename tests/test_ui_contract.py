@@ -46,6 +46,8 @@ class FrontendContractTestCase(unittest.TestCase):
         self.assertIn('href="#attendance-form"', source)
         self.assertIn('href="#attendance-list"', source)
         self.assertIn('id="withdraw-shortcut" class="mobile-section-link hidden"', source)
+        self.assertIn('id="notification-panel" class="notification-panel hidden"', source)
+        self.assertRegex(enhancements, r"\.notification-panel\s*\{[^}]*margin-bottom:\s*18px;")
         self.assertRegex(
             source,
             r'<div class="legend">\s*<a id="removal-history-link"[^>]*>\s*Jucători retrași',
@@ -89,8 +91,9 @@ class FrontendContractTestCase(unittest.TestCase):
         app_script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
         self.assertIn("navigator.serviceWorker.controller", app_script)
         self.assertIn('addEventListener("controllerchange"', app_script)
-        self.assertIn('/styles.css?v=20260923-1', attendance_page)
-        self.assertIn('/app.js?v=20260924-2', attendance_page)
+        self.assertIn('/styles.css?v=20260924-3', attendance_page)
+        self.assertIn('/ui-enhancements.css?v=20260924-3', attendance_page)
+        self.assertIn('/app.js?v=20260924-3', attendance_page)
         self.assertIn('id="notification-toggle"', attendance_page)
         self.assertIn('addEventListener("push"', worker)
         self.assertIn('addEventListener("notificationclick"', worker)

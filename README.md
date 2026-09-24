@@ -130,14 +130,15 @@ Team-builder page admin actions:
 
 ### Match notifications
 
-On the Friday or Wednesday attendance page, visitors can select **Activează notificările**
-to allow browser notifications for that match day. The browser asks for permission only
+On the Friday or Wednesday attendance page, visitors can select **Activează** under
+**Notificări** to allow browser notifications for that match day. The browser asks for permission only
 after this click. Enabling notifications for one match switches this browser away from
 the other match's notifications; the control can also turn them off. Joining Wednesday
 removes an existing Friday subscription from the browser used for signup; Wednesday
 alerts still require opt-in. Subscriptions on other devices must be managed on those
-devices. A successful signup sends one notification for the submitted names;
-a voluntary withdrawal or individual organizer deletion sends a removal notification.
+devices. A successful signup sends one notification for the submitted names and the
+total number of active players on that match's list; a voluntary withdrawal or
+individual organizer deletion sends a removal notification.
 The open attendance page refreshes its table when a matching push arrives. Rejected
 submissions, repeated withdrawals, and changes to past weeks do not send alerts.
 

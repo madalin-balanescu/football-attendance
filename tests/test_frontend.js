@@ -155,12 +155,16 @@ test("app.js lets a visitor opt in and out of notifications for the selected mat
   await flush();
   const toggle = document.getElementById("notification-toggle");
   assert.equal(document.getElementById("notification-panel").classList.contains("hidden"), false);
+  assert.equal(document.getElementById("notification-message").textContent, "Oprite pentru acest meci");
   await toggle.listeners.click();
-  assert.equal(toggle.textContent, "Dezactivează notificările");
+  assert.equal(toggle.textContent, "Dezactivează");
+  assert.equal(toggle.attributes["aria-label"], "Dezactivează notificările");
+  assert.equal(document.getElementById("notification-message").textContent, "Active pentru acest meci");
   assert.equal(requests[3].url, "/api/push/subscribe");
   assert.equal(JSON.parse(requests[3].options.body).event, "friday");
   await toggle.listeners.click();
-  assert.equal(toggle.textContent, "Activează notificările");
+  assert.equal(toggle.textContent, "Activează");
+  assert.equal(toggle.attributes["aria-label"], "Activează notificările");
   assert.equal(requests[4].url, "/api/push/unsubscribe");
   serviceWorker.listeners.message({ data: { type: "ROSTER_CHANGED", event: "friday" } });
   await flush();
