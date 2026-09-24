@@ -1389,12 +1389,25 @@ class AttendanceServerTestCase(unittest.TestCase):
         server.save_push_subscription("wednesday", wednesday_endpoint, "A" * 87, "B" * 22)
         sender = Mock()
         with patch.multiple(server, webpush=sender, VAPID_PRIVATE_KEY="private", VAPID_SUBJECT="mailto:test@example.com"):
-            server.send_match_notifications("friday", "joined", ["Ion", "Vlad"])
+            server.send_match_notifications("friday", "joined", ["Ion", "Vlad"], 20)
         self.assertEqual(sender.call_count, 1)
         self.assertEqual(sender.call_args.kwargs["subscription_info"]["endpoint"], friday_endpoint)
         notice = json.loads(sender.call_args.kwargs["data"])
         self.assertEqual(notice["event"], "friday")
-        self.assertIn("Ion, Vlad s-au înscris", notice["body"])
+        self.assertEqual(notice["body"], "Ion, Vlad s-au înscris. Total: 20 jucători.")
+
+    def test_join_alert_keeps_the_total_visible_with_one_player_or_long_names(self) -> None:
+        endpoint = "https://fcm.googleapis.com/fcm/send/friday"
+        server.save_push_subscription("friday", endpoint, "A" * 87, "B" * 22)
+        sender = Mock()
+        with patch.multiple(server, webpush=sender, VAPID_PRIVATE_KEY="private", VAPID_SUBJECT="mailto:test@example.com"):
+            server.send_match_notifications("friday", "joined", ["Ion"], 1)
+            server.send_match_notifications("friday", "joined", ["Ion" * 80], 19)
+        first = json.loads(sender.call_args_list[0].kwargs["data"])
+        long_name = json.loads(sender.call_args_list[1].kwargs["data"])
+        self.assertEqual(first["body"], "Ion s-a înscris. Total: 1 jucător.")
+        self.assertLessEqual(len(long_name["body"]), 180)
+        self.assertTrue(long_name["body"].endswith("Total: 19 jucători."))
 
     def test_wednesday_signup_removes_only_that_browsers_friday_alerts(self) -> None:
         server.set_setting("signup_mode_wednesday", "force_open")
@@ -1447,15 +1460,17 @@ class AttendanceServerTestCase(unittest.TestCase):
             with patch.object(server.PUSH_EXECUTOR, "submit") as submit:
                 server.queue_match_notification("friday", "2020-W01", "joined", ["Ion"])
                 submit.assert_not_called()
-                server.queue_match_notification("friday", self.week_key, "joined", ["Ion"])
-                submit.assert_called_once()
+                server.queue_match_notification("friday", self.week_key, "joined", ["Ion"], 1)
+                submit.assert_called_once_with(server.send_match_notifications, "friday", "joined", ["Ion"], 1)
 
     def test_successful_roster_mutations_queue_join_and_leave_alerts(self) -> None:
         server.set_setting("signup_mode", "force_open")
+        server.insert_registrations(["Ana"], self.week_key)
         with patch.object(server, "queue_match_notification") as queue:
             status, created, _ = self.dispatch("POST", "/api/registrations", {"event": "friday", "person1": "Ion", "person2": "Vlad"})
             self.assertEqual(status, 201)
-            queue.assert_called_once_with("friday", self.week_key, "joined", ["Ion", "Vlad"])
+            self.assertEqual(len(created["registrations"]), 3)
+            queue.assert_called_once_with("friday", self.week_key, "joined", ["Ion", "Vlad"], 3)
             token = str(created["managementPath"]).rsplit("/", 1)[-1]
             queue.reset_mock()
             status, _, _ = self.dispatch("POST", "/api/management/withdraw", {"registrationId": created["submittedRegistrationIds"][0], "confirmed": True}, authorization=f"Bearer {token}")

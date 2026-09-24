@@ -510,10 +510,11 @@ async function pushRequest(path, body) {
 
 function showNotificationState(subscribed, message = "") {
   notificationsSubscribed = subscribed;
-  notificationToggle.textContent = subscribed ? "Dezactivează notificările" : "Activează notificările";
+  notificationToggle.textContent = subscribed ? "Dezactivează" : "Activează";
+  notificationToggle.setAttribute("aria-label", subscribed ? "Dezactivează notificările" : "Activează notificările");
   notificationMessage.textContent = message || (subscribed
-    ? "Notificările sunt active pentru acest meci."
-    : "Notificările sunt dezactivate pentru acest meci.");
+    ? "Active pentru acest meci"
+    : "Oprite pentru acest meci");
 }
 
 async function loadNotificationControls() {

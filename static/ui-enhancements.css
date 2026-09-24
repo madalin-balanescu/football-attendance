@@ -186,6 +186,42 @@ tbody tr.waiting {
   line-height: 1.5;
 }
 
+.notification-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-tint);
+}
+
+.notification-copy {
+  min-width: 0;
+}
+
+.notification-copy strong {
+  font-size: 0.9rem;
+}
+
+.notification-copy p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.notification-panel .secondary-button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  background: var(--card-solid);
+  font-size: 0.78rem;
+}
+
 .saved-management-links {
   display: grid;
   gap: 8px;

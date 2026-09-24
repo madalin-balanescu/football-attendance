@@ -2072,7 +2072,9 @@ def has_push_subscription(event_key: str, endpoint: str) -> bool:
         ).fetchone() is not None
 
 
-def send_match_notifications(event_key: str, action: str, names: list[str]) -> None:
+def send_match_notifications(
+    event_key: str, action: str, names: list[str], total_players: int | None = None,
+) -> None:
     placeholder = "%s" if using_postgres() else "?"
     with get_connection() as connection:
         subscriptions = connection.execute(
@@ -2086,10 +2088,21 @@ def send_match_notifications(event_key: str, action: str, names: list[str]) -> N
     verb = "s-a înscris" if action == "joined" else "s-a retras"
     if len(names) > 1:
         verb = "s-au înscris" if action == "joined" else "s-au retras"
+    body = f"{', '.join(names)} {verb}."
+    if action == "joined":
+        if total_players is None:
+            total_players = len(fetch_registrations(current_week_key(), event_key))
+        player_word = "jucător" if total_players == 1 else "jucători"
+        suffix = f" Total: {total_players} {player_word}."
+        if len(body) + len(suffix) > 180:
+            body = body[:179 - len(suffix)].rstrip() + "…"
+        body += suffix
+    else:
+        body = (body + " Verifică lista curentă.")[:180]
     notification = json.dumps({
         "event": event_key,
         "title": f"Fotbal {day}: lista actualizată",
-        "body": f"{', '.join(names)} {verb}. Verifică lista curentă."[:180],
+        "body": body,
     }, ensure_ascii=False)
     for endpoint, p256dh, auth in subscriptions:
         try:
@@ -2109,9 +2122,11 @@ def send_match_notifications(event_key: str, action: str, names: list[str]) -> N
                 print(f"Match push delivery failed: {type(error).__name__}, status={status}.", file=sys.stderr)
 
 
-def queue_match_notification(event_key: str, week_key: str, action: str, names: list[str]) -> None:
+def queue_match_notification(
+    event_key: str, week_key: str, action: str, names: list[str], total_players: int | None = None,
+) -> None:
     if push_enabled() and names and week_key == current_week_key():
-        PUSH_EXECUTOR.submit(send_match_notifications, event_key, action, names)
+        PUSH_EXECUTOR.submit(send_match_notifications, event_key, action, names, total_players)
 
 
 def fetch_registration_identity(registration_id: int, event_key: str) -> tuple[str, str] | None:
@@ -2418,7 +2433,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
         response["submittedRegistrationIds"] = submitted_registration_ids
         response["managementPath"] = f"/inscriere/{management_token}"
         response["signupWindow"] = signup_window
-        queue_match_notification(event_key, week_key, "joined", names)
+        queue_match_notification(event_key, week_key, "joined", names, len(response["registrations"]))
         self.send_json(response, status=HTTPStatus.CREATED)
 
     def handle_push_subscription(self, path: str) -> None:

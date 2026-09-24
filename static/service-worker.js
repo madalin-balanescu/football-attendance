@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "football-attendance-";
-const CACHE_NAME = `${CACHE_PREFIX}v22`;
-const ASSET_VERSION = "20260924-2";
+const CACHE_NAME = `${CACHE_PREFIX}v23`;
+const ASSET_VERSION = "20260924-3";
 const APP_SHELL = [
   "/",
   "/miercuri",
