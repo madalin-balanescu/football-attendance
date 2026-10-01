@@ -32,7 +32,7 @@
     <link rel="icon" href="/app-icon.svg?v=20260923-1" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/app-icon-192.png?v=20260923-1" />
     <link rel="stylesheet" href="/styles.css?v=20260924-3" />
-    <link rel="stylesheet" href="/ui-enhancements.css?v=20260924-3" />
+    <link rel="stylesheet" href="/ui-enhancements.css?v=20261001-2" />
   </head>
   <body class="app-booting">
     <a class="skip-link" href="#continut-principal">Sari la conținutul principal</a>
@@ -246,8 +246,8 @@
         <div id="content-grid" class="content-grid">
           <form id="attendance-form" class="signup-card" aria-labelledby="signup-card-title">
             <div class="action-card-head">
-              <span id="signup-card-pill" class="action-pill">Rezervă-ți locul</span>
-              <h3 id="signup-card-title">Trimite prezența pentru tine sau pentru încă un coleg</h3>
+              <span id="signup-card-pill" class="action-pill">Înscriere jucători</span>
+              <h3 id="signup-card-title">Înscrie unul sau doi jucători</h3>
               <p id="signup-card-description">Completezi rapid, iar lista se actualizează instant în ordinea înscrierii.</p>
             </div>
             <div class="form-controls-shell">
@@ -292,7 +292,7 @@
 
               <div id="standard-signup-fields">
                 <label class="field">
-                  <span>Numele tău complet (ca în WhatsApp)</span>
+                  <span>Numele primului jucător (ca în WhatsApp)</span>
                   <input
                     id="person1"
                     name="person1"
@@ -306,7 +306,7 @@
                 </label>
 
                 <label class="field">
-                  <span>Alt jucător (opțional)</span>
+                  <span>Al doilea jucător (opțional)</span>
                   <input
                     id="person2"
                     name="person2"
@@ -317,12 +317,12 @@
                     aria-describedby="second-player-help"
                     enterkeyhint="send"
                   />
-                  <small id="second-player-help" class="field-help">Dacă vii singur, lasă acest câmp gol.</small>
+                  <small id="second-player-help" class="field-help">Completează doar dacă înscrii și un al doilea jucător.</small>
                 </label>
               </div>
 
               <button id="submit-button" type="submit" disabled>
-                <span class="button-label">Trimite înscrierea</span>
+                <span class="button-label">Completează numele jucătorului</span>
               </button>
             </div>
 
@@ -338,15 +338,15 @@
                     Copiază linkul
                   </button>
                   <a id="success-management-link" class="management-link" href="/">
-                    Deschide administrarea înscrierii
+                    Vezi jucătorii din această înscriere
                   </a>
                 </div>
               </div>
             </div>
 
             <section id="saved-management-panel" class="saved-management-panel hidden" aria-labelledby="saved-management-title">
-              <strong id="saved-management-title">Înscrierea ta</strong>
-              <p>Vezi înscrierea ta sau retrage-te. Dacă ai înscris și un prieten, îl găsești tot aici.</p>
+              <strong id="saved-management-title">Jucători înscriși de pe acest dispozitiv</strong>
+              <p>Aici găsești toți jucătorii din înscrierile salvate pe acest dispozitiv. Verifică numele înainte de a retrage un jucător.</p>
               <div id="saved-management-links" class="saved-management-links"></div>
             </section>
 
@@ -402,12 +402,12 @@
       </section>
     </main>
 
-    <nav class="mobile-section-nav" aria-label="Acces rapid la înscriere, listă și retragere">
+    <nav class="mobile-section-nav" aria-label="Acces rapid la înscriere, listă și înscrieri salvate">
       <a class="mobile-section-link mobile-section-link-primary" href="#attendance-form">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M5 19h3.6L19.2 8.4a2.5 2.5 0 0 0-3.6-3.6L5 15.4V19Zm10.4-12.6 2.2 2.2" />
         </svg>
-        <span>Înscrie-te</span>
+        <span>Înscrie</span>
       </a>
       <a class="mobile-section-link" href="#attendance-list">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -415,11 +415,11 @@
         </svg>
         <span>Vezi lista</span>
       </a>
-      <a id="withdraw-shortcut" class="mobile-section-link hidden" href="/inscrierile-mele?event=friday" aria-label="Retrage-te sau retrage un jucător înscris de tine">
+      <a id="withdraw-shortcut" class="mobile-section-link hidden" href="/inscrierile-mele?event=friday" aria-label="Vezi jucătorii din înscrierile salvate pe acest dispozitiv">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M10 5H5v14h5M13 8l4 4-4 4M9 12h8" />
         </svg>
-        <span>Retrage-te</span>
+        <span>Înscrieri salvate</span>
       </a>
     </nav>
 
@@ -434,10 +434,10 @@
         <div class="stadium-glow"></div>
         <div class="football-overlay-loader"></div>
         <p class="submission-overlay-title">Se trimite înscrierea...</p>
-        <p class="submission-overlay-text">Mingea este în joc. Te adăugăm acum pe listă.</p>
+        <p class="submission-overlay-text">Jucătorii selectați sunt adăugați pe listă.</p>
       </div>
     </div>
 
-    <script src="/app.js?v=20261001-1" defer></script>
+    <script src="/app.js?v=20261001-2" defer></script>
   </body>
 </html>

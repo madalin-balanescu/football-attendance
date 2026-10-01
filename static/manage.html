@@ -18,7 +18,7 @@
     <link rel="manifest" href="/manifest.webmanifest?v=20260921-1" />
     <link rel="icon" href="/app-icon.svg?v=20260921-1" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css?v=20260921-1" />
-    <link rel="stylesheet" href="/ui-enhancements.css?v=20260921-1" />
+    <link rel="stylesheet" href="/ui-enhancements.css?v=20261001-2" />
   </head>
   <body class="app-booting management-page">
     <main class="page-shell management-shell">
@@ -35,7 +35,7 @@
           <button id="copy-current-link" type="button" class="secondary-button">Copiază linkul</button>
         </div>
 
-        <p id="management-message" class="form-message" role="status" aria-live="polite"></p>
+        <p id="management-message" class="form-message" role="status" aria-live="polite" tabindex="-1"></p>
         <div id="management-loading" class="management-loading">Se încarcă înscrierea...</div>
         <div id="managed-registrations" class="managed-registrations"></div>
 
@@ -45,6 +45,19 @@
         </aside>
       </section>
     </main>
-    <script src="/manage.js?v=20260921-1" defer></script>
+    <dialog id="withdrawal-dialog" class="withdrawal-dialog" aria-labelledby="withdrawal-title" aria-describedby="withdrawal-player withdrawal-match withdrawal-consequence">
+      <div class="withdrawal-dialog-content">
+        <h2 id="withdrawal-title">Confirmă retragerea jucătorului</h2>
+        <p class="withdrawal-player-label">Jucătorul pe care îl retragi:</p>
+        <strong id="withdrawal-player" class="withdrawal-player"></strong>
+        <p id="withdrawal-match" class="withdrawal-match"></p>
+        <p id="withdrawal-consequence"></p>
+        <div class="withdrawal-dialog-actions">
+          <button id="keep-registration" type="button" class="secondary-button" autofocus>Păstrează înscrierea</button>
+          <button id="confirm-withdrawal" type="button" class="danger-button">Confirmă retragerea</button>
+        </div>
+      </div>
+    </dialog>
+    <script src="/manage.js?v=20261001-2" defer></script>
   </body>
 </html>

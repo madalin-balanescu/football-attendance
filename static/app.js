@@ -318,7 +318,13 @@ function syncSubmitButtonState() {
   } else if (isOffline) {
     submitButtonLabel.textContent = "Necesită conexiune";
   } else {
-    submitButtonLabel.textContent = isMemberOnlyPhase() ? "Înscrie-mă" : "Trimite înscrierea";
+    const member = isMemberOnlyPhase() ? findSelectedWednesdayMember() : null;
+    const names = isMemberOnlyPhase()
+      ? member ? [member.name || member.phone || member.label] : []
+      : [person1Input.value.trim(), person2Input.value.trim()].filter(Boolean);
+    submitButtonLabel.textContent = names.length
+      ? `Înscrie pe ${names.join(" și ")}`
+      : isMemberOnlyPhase() ? "Selectează un jucător" : "Completează numele jucătorului";
   }
 }
 
@@ -356,14 +362,14 @@ function updateWednesdaySignupExperience(payload = {}) {
 
   if (memberOnly) {
     signupCardPill.textContent = "Acces membri WhatsApp";
-    signupCardTitle.textContent = "Alege-te din lista grupului";
+    signupCardTitle.textContent = "Alege jucătorul din lista grupului";
     signupCardDescription.textContent =
       "Caută după nume sau număr de telefon și adaugă câte un jucător pe rând.";
     signupHint.textContent =
       "După confirmare, poți selecta următorul membru disponibil. Fiecare membru poate fi înscris o singură dată.";
   } else {
-    signupCardPill.textContent = "Rezervă-ți locul";
-    signupCardTitle.textContent = "Trimite prezența pentru tine sau pentru încă un coleg";
+    signupCardPill.textContent = "Înscriere jucători";
+    signupCardTitle.textContent = "Înscrie unul sau doi jucători";
     signupCardDescription.textContent =
       "Completezi rapid, iar lista se actualizează instant în ordinea înscrierii.";
     signupHint.textContent =
@@ -426,7 +432,7 @@ function renderSavedManagementLinks() {
   const link = document.createElement("a");
   link.setAttribute("href", eventApiUrl("/inscrierile-mele"));
   link.className = "secondary-button inline-link-button";
-  link.textContent = "Vezi înscrierea";
+  link.textContent = "Vezi jucătorii înscriși";
   savedManagementLinks.appendChild(link);
 }
 
@@ -714,7 +720,9 @@ function flashSuccessPanel(payload) {
   const confirmed = Math.min(registrations.length, 18);
   const spotsLeft = Math.max(18 - confirmed, 0);
 
-  successTitle.textContent = submitted.length > 1 ? "Locuri înregistrate" : "Loc înregistrat";
+  successTitle.textContent = submitted.length
+    ? `${submitted.length > 1 ? "Înscriși" : "Înscris"}: ${submitted.map((registration) => registration.name).join(" și ")}`
+    : "Înscriere reușită";
   successSummary.textContent = spotsLeft > 0
     ? `Mai sunt ${spotsLeft} ${spotsLeft === 1 ? "loc confirmat disponibil" : "locuri confirmate disponibile"}.`
     : "Primele 18 locuri sunt ocupate; înscrierile noi intră pe lista de așteptare.";
@@ -737,7 +745,6 @@ function flashSuccessPanel(payload) {
   successPanel.classList.remove("hidden");
   successManagementActions.classList.toggle("hidden", !managementPath);
   if (managementPath) {
-    successTitle.textContent = "Înscriere reușită";
     successSummary.textContent = "Salvează linkul pentru modificare sau retragere.";
     successManagementLink.setAttribute("href", managementPath);
     copyManagementLinkButton.textContent = "Copiază linkul";
@@ -947,13 +954,13 @@ async function submitRegistration(event) {
   formMessage.textContent = "";
   const selectedMember = isMemberOnlyPhase() ? findSelectedWednesdayMember() : null;
   if (isMemberOnlyPhase() && !selectedMember) {
-    formMessage.textContent = "Selectează numele tău din lista membrilor WhatsApp.";
+    formMessage.textContent = "Selectează jucătorul pe care vrei să îl înscrii din lista membrilor WhatsApp.";
     wednesdayMemberSearch.focus?.();
     return;
   }
   if (!isMemberOnlyPhase() && person2Input.value.trim()
       && normalizeRegistrationName(person1Input.value) === normalizeRegistrationName(person2Input.value)) {
-    formMessage.textContent = "Ai completat același jucător de două ori. Dacă vii singur, lasă câmpul pentru al doilea jucător gol.";
+    formMessage.textContent = "Ai completat același jucător de două ori. Dacă înscrii un singur jucător, lasă al doilea câmp gol.";
     person2Input.focus?.();
     return;
   }
@@ -1189,6 +1196,8 @@ function toggleTheme() {
 }
 
 form.addEventListener("submit", submitRegistration);
+person1Input.addEventListener("input", syncSubmitButtonState);
+person2Input.addEventListener("input", syncSubmitButtonState);
 wednesdayMemberSearch.addEventListener("input", handleWednesdayMemberSelectionChange);
 wednesdayMemberSearch.addEventListener("change", syncSubmitButtonState);
 wednesdayMemberSearch.addEventListener("focus", () => {

@@ -5,12 +5,28 @@ const managementIntro = document.getElementById("management-intro");
 const backToEvent = document.getElementById("back-to-event");
 const copyCurrentLinkButton = document.getElementById("copy-current-link");
 const refreshManagementButton = document.getElementById("refresh-management");
+const withdrawalDialog = document.getElementById("withdrawal-dialog");
+const withdrawalPlayer = document.getElementById("withdrawal-player");
+const withdrawalMatch = document.getElementById("withdrawal-match");
+const withdrawalConsequence = document.getElementById("withdrawal-consequence");
+const keepRegistrationButton = document.getElementById("keep-registration");
+const confirmWithdrawalButton = document.getElementById("confirm-withdrawal");
 const isCombinedManagement = window.location.pathname.replace(/\/+$/, "") === "/inscrierile-mele";
 const selectedEvent = new URLSearchParams(window.location.search).get("event") === "wednesday" ? "wednesday" : "friday";
 const selectedDay = selectedEvent === "wednesday" ? "miercuri" : "vineri";
 const managementToken = (window.location.pathname.split("/").filter(Boolean).pop() || "").trim();
 const MANAGEMENT_LINKS_KEY = "football-attendance:management-links";
 let combinedLoadVersion = 0;
+let pendingWithdrawal = null;
+
+function matchLabel(payload) {
+  return `${payload.eventKey === "wednesday" ? "Miercuri" : "Vineri"} · ${payload.weekLabel}`;
+}
+
+function withdrawalButtonLabel(registration) {
+  return `Retrage pe ${registration.name}`;
+}
+
 
 function managementHeaders(token = managementToken) {
   return {
@@ -65,19 +81,17 @@ function appendManagedPlayer(registration, payload, token) {
     ? `${statusLabel(registration)} · poziția ${registration.position}`
     : statusLabel(registration);
   copy.append(name, status);
-  if (isCombinedManagement) {
-    const match = document.createElement("span");
-    match.textContent = `${payload.eventKey === "wednesday" ? "Miercuri" : "Vineri"} · ${payload.weekLabel}`;
-    copy.appendChild(match);
-  }
+  const match = document.createElement("span");
+  match.textContent = matchLabel(payload);
+  copy.appendChild(match);
   card.appendChild(copy);
 
   if (registration.active) {
     const withdrawButton = document.createElement("button");
     withdrawButton.type = "button";
     withdrawButton.className = "danger-button managed-withdraw-button";
-    withdrawButton.textContent = "Retrage";
-    withdrawButton.addEventListener("click", () => withdrawRegistration(registration, withdrawButton, token));
+    withdrawButton.textContent = withdrawalButtonLabel(registration);
+    withdrawButton.addEventListener("click", () => openWithdrawalConfirmation(registration, payload, withdrawButton, token));
     card.appendChild(withdrawButton);
   }
   managedRegistrations.appendChild(card);
@@ -173,17 +187,23 @@ async function loadSubmission() {
   }
 }
 
-async function withdrawRegistration(registration, triggerButton, token = managementToken) {
-  const confirmed = window.confirm(
-    `Confirmi retragerea lui ${registration.name}? Locul va fi oferit automat primei persoane în așteptare.`,
-  );
-  if (!confirmed) {
-    return;
-  }
+function openWithdrawalConfirmation(registration, payload, triggerButton, token) {
+  if (triggerButton.disabled || pendingWithdrawal) return;
+  pendingWithdrawal = { registration, payload, triggerButton, token };
+  withdrawalPlayer.textContent = registration.name;
+  withdrawalMatch.textContent = `Meci: ${matchLabel(payload)}`;
+  withdrawalConsequence.textContent = registration.status === "confirmed"
+    ? "Jucătorul va fi retras de la acest meci. Locul lui va fi oferit automat primei persoane în așteptare."
+    : "Jucătorul va fi retras din lista de așteptare pentru acest meci.";
+  withdrawalDialog.showModal();
+  keepRegistrationButton.focus();
+}
+
+async function withdrawRegistration(registration, matchPayload, triggerButton, token) {
 
   managementMessage.textContent = "";
   triggerButton.disabled = true;
-  triggerButton.textContent = "Se retrage...";
+  triggerButton.textContent = `Se retrage ${registration.name}...`;
   try {
     const response = await fetch("/api/management/withdraw", {
       method: "POST",
@@ -196,15 +216,19 @@ async function withdrawRegistration(registration, triggerButton, token = managem
     }
     if (isCombinedManagement) {
       await loadCombinedRegistrations();
-      managementMessage.textContent = [payload.message, managementMessage.textContent].filter(Boolean).join(" ");
+      managementMessage.textContent = [
+        `${registration.name} a fost retras. Meci: ${matchLabel(matchPayload)}. Lista a fost actualizată.`,
+        managementMessage.textContent,
+      ].filter(Boolean).join(" ");
     } else {
       renderSubmission(payload);
-      managementMessage.textContent = payload.message;
+      managementMessage.textContent = `${registration.name} a fost retras. Meci: ${matchLabel(matchPayload)}. Lista a fost actualizată.`;
     }
+    managementMessage.focus();
   } catch (error) {
     managementMessage.textContent = error.message;
     triggerButton.disabled = false;
-    triggerButton.textContent = "Retrage";
+    triggerButton.textContent = withdrawalButtonLabel(registration);
   }
 }
 
@@ -222,14 +246,25 @@ async function copyCurrentLink() {
 
 copyCurrentLinkButton.addEventListener("click", copyCurrentLink);
 refreshManagementButton.addEventListener("click", loadSubmission);
+keepRegistrationButton.addEventListener("click", () => withdrawalDialog.close());
+withdrawalDialog.addEventListener("close", () => {
+  if (!withdrawalDialog.open) pendingWithdrawal = null;
+});
+confirmWithdrawalButton.addEventListener("click", () => {
+  const selection = pendingWithdrawal;
+  if (!selection) return;
+  pendingWithdrawal = null;
+  withdrawalDialog.close();
+  return withdrawRegistration(selection.registration, selection.payload, selection.triggerButton, selection.token);
+});
 if (isCombinedManagement) {
   document.documentElement.dataset.event = selectedEvent;
-  document.title = `Înscrierea ta · ${selectedDay === "miercuri" ? "Miercuri" : "Vineri"}`;
-  document.getElementById("management-title").textContent = "Înscrierea ta";
+  document.title = `Jucători înscriși de pe acest dispozitiv · ${selectedDay === "miercuri" ? "Miercuri" : "Vineri"}`;
+  document.getElementById("management-title").textContent = "Jucători înscriși de pe acest dispozitiv";
   document.getElementById("management-kicker").textContent = `Fotbal · ${selectedDay === "miercuri" ? "Miercuri" : "Vineri"}`;
   backToEvent.setAttribute("href", selectedEvent === "wednesday" ? "/miercuri" : "/");
   backToEvent.textContent = `Vezi lista de ${selectedDay}`;
-  managementIntro.textContent = "Vezi înscrierea ta sau retrage-te. Dacă ai înscris și un prieten, îl găsești tot aici.";
+  managementIntro.textContent = "Aici găsești toți jucătorii din înscrierile salvate pe acest dispozitiv. Verifică numele și data meciului înainte de a retrage un jucător.";
   document.getElementById("management-security-note").textContent = "Această pagină reunește înscrierile salvate în acest browser. Pe alt dispozitiv, deschide linkurile private primite la înscriere pentru a le adăuga aici.";
   copyCurrentLinkButton.classList.add("hidden");
   window.addEventListener("storage", (event) => { if (event.key === MANAGEMENT_LINKS_KEY) loadSubmission(); });

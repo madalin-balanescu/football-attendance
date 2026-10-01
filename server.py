@@ -2389,7 +2389,7 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             if member is None:
                 self.send_json(
                     {
-                        "error": "Selectează numele tău din lista membrilor WhatsApp.",
+                        "error": "Selectează jucătorul pe care vrei să îl înscrii din lista membrilor WhatsApp.",
                         "signupWindow": signup_window,
                     },
                     status=HTTPStatus.BAD_REQUEST,

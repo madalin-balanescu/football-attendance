@@ -318,7 +318,7 @@ test("app.js submitRegistration updates message and resets form on success", asy
   assert.equal(document.getElementById("person1").value, "");
   assert.equal(document.getElementById("person2").value, "");
   assert.equal(document.getElementById("attendance-table-body").children.length, 3);
-  assert.equal(document.getElementById("success-title").textContent, "Locuri înregistrate");
+  assert.equal(document.getElementById("success-title").textContent, "Înscriși: Ion și Vlad");
   assert.equal(
     document.getElementById("success-details").children[0].textContent,
     "Ion: poziția 2 · Confirmat",
@@ -427,7 +427,7 @@ test("app.js keeps and displays the private management link after submission", a
   document.getElementById("person1").value = "Ion";
   await context.submitRegistration({ preventDefault() {} });
 
-  assert.equal(document.getElementById("success-title").textContent, "Înscriere reușită");
+  assert.equal(document.getElementById("success-title").textContent, "Înscris: Ion");
   assert.equal(
     document.getElementById("success-summary").textContent,
     "Salvează linkul pentru modificare sau retragere.",
@@ -586,12 +586,13 @@ test("app.js shows the searchable member picker during Wednesday priority access
   assert.equal(document.getElementById("wednesday-member-options").children.length, 2);
   assert.equal(document.getElementById("person1").disabled, true);
   assert.equal(document.getElementById("wednesday-member-search").disabled, false);
-  assert.equal(document.getElementById("submit-button").querySelector(".button-label").textContent, "Înscrie-mă");
+  assert.equal(document.getElementById("submit-button").querySelector(".button-label").textContent, "Selectează un jucător");
   assert.equal(document.getElementById("submit-button").disabled, true);
 
   document.getElementById("wednesday-member-search").value = members[0].label;
   document.getElementById("wednesday-member-search").listeners.input();
   assert.equal(document.getElementById("submit-button").disabled, false);
+  assert.equal(document.getElementById("submit-button").querySelector(".button-label").textContent, `Înscrie pe ${members[0].name}`);
   await context.submitRegistration({ preventDefault() {} });
 
   const submittedBody = JSON.parse(requests[2].options.body);
@@ -600,10 +601,12 @@ test("app.js shows the searchable member picker during Wednesday priority access
   assert.equal(document.getElementById("attendance-table-body").children.length, 1);
   assert.equal(document.getElementById("wednesday-member-search").value, "");
   assert.equal(document.getElementById("submit-button").disabled, true);
+  assert.equal(document.getElementById("submit-button").querySelector(".button-label").textContent, "Selectează un jucător");
 
   document.getElementById("wednesday-member-search").value = members[1].label;
   document.getElementById("wednesday-member-search").listeners.input();
   assert.equal(document.getElementById("submit-button").disabled, false);
+  assert.equal(document.getElementById("submit-button").querySelector(".button-label").textContent, `Înscrie pe ${members[1].phone}`);
   await context.submitRegistration({ preventDefault() {} });
 
   const secondSubmittedBody = JSON.parse(requests[3].options.body);
@@ -1051,12 +1054,16 @@ test("combined withdrawal uses the selected player's token and refreshes every s
   await flush();
   const button = document.getElementById("managed-registrations").children[1].querySelector("button");
   await button.listeners.click();
+  assert.equal(requests.length, 2);
+  assert.equal(document.getElementById("withdrawal-player").textContent, "Player 2");
+  await document.getElementById("confirm-withdrawal").listeners.click();
   assert.equal(requests[2].url, "/api/management/withdraw");
   assert.equal(requests[2].options.headers.Authorization, `Bearer ${tokenB}`);
   assert.deepEqual(JSON.parse(requests[2].options.body), { registrationId: 2, confirmed: true });
   assert.equal(requests.length, 5);
   assert.equal(document.getElementById("managed-registrations").children.length, 2);
   assert.equal(document.getElementById("managed-registrations").children[1].querySelector("button"), null);
+  assert.match(document.getElementById("management-message").textContent, /Player 2 a fost retras/);
 });
 
 test("combined management drops expired links but keeps failed links and usable players", async () => {
@@ -1090,4 +1097,145 @@ test("combined page without saved links shows an empty personal list without fet
   assert.equal(requests.length, 0);
   assert.match(document.getElementById("management-message").textContent, /Nu ai înscrieri/);
   assert.equal(document.body.classList.contains("app-booting"), false);
+});
+
+for (const pathname of ["/", "/miercuri"]) {
+  test(`signup names both selected players and tracks edits on ${pathname}`, async () => {
+    const document = buildAppDocument();
+    loadScript("app.js", document, [
+      { body: { enabled: true, authenticated: false } }, { body: appPayload() },
+    ], { pathname });
+    await flush();
+    const first = document.getElementById("person1");
+    const second = document.getElementById("person2");
+    const label = document.getElementById("submit-button").querySelector(".button-label");
+    first.value = "  Mihai  ";
+    first.listeners.input();
+    assert.equal(label.textContent, "Înscrie pe Mihai");
+    second.value = "Vlad";
+    second.listeners.input();
+    assert.equal(label.textContent, "Înscrie pe Mihai și Vlad");
+    first.value = "Ion";
+    first.listeners.input();
+    assert.equal(label.textContent, "Înscrie pe Ion și Vlad");
+    second.value = "";
+    second.listeners.input();
+    assert.equal(label.textContent, "Înscrie pe Ion");
+    first.value = "";
+    first.listeners.input();
+    assert.equal(label.textContent, "Completează numele jucătorului");
+  });
+}
+
+test("Wednesday signup names the chosen member and uses the phone for an unnamed member", async () => {
+  const document = buildAppDocument();
+  const members = [
+    { id: "wm-001", name: "Mihai", phone: "+40 741 111 111", label: "Mihai — +40 741 111 111", available: true },
+    { id: "wm-002", name: "", phone: "+40 742 222 222", label: "Fără nume — +40 742 222 222", available: true },
+  ];
+  loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: false } },
+    { body: appPayload({ signupWindow: { isOpen: true, scheduleOpen: true, registrationPhase: "member_only" }, wednesdayMembers: members }) },
+  ], { pathname: "/miercuri" });
+  await flush();
+  const options = document.getElementById("wednesday-member-options");
+  const label = document.getElementById("submit-button").querySelector(".button-label");
+  options.children[0].listeners.click();
+  assert.equal(label.textContent, "Înscrie pe Mihai");
+  options.children[1].listeners.click();
+  assert.equal(label.textContent, "Înscrie pe +40 742 222 222");
+  document.getElementById("wednesday-member-search").value = "Unknown";
+  document.getElementById("wednesday-member-search").listeners.input();
+  assert.equal(label.textContent, "Selectează un jucător");
+  assert.equal(document.getElementById("submit-button").disabled, true);
+});
+
+for (const eventKey of ["friday", "wednesday"]) {
+  test(`private withdrawal requires explicit confirmation and shows the ${eventKey} match`, async () => {
+    const document = buildManagementDocument();
+    const registration = { id: 1, name: "Mihai", active: true, status: "confirmed", position: 1 };
+    const payload = managedPayload([1], { eventKey, weekLabel: "02 Oct 2026", registrations: [registration] });
+    const { requests } = loadScript("manage.js", document, [
+      { body: payload },
+      { body: { ...payload, registrations: [{ ...registration, active: false, status: "withdrawn", position: null }] } },
+    ], { pathname: `/inscriere/${tokenA}` });
+    await flush();
+    const button = document.getElementById("managed-registrations").children[0].querySelector("button");
+    const dialog = document.getElementById("withdrawal-dialog");
+    assert.equal(button.textContent, "Retrage pe Mihai");
+    button.focus();
+    button.listeners.click();
+    assert.equal(requests.length, 1);
+    assert.equal(dialog.open, true);
+    assert.equal(document.activeElement, document.getElementById("keep-registration"));
+    assert.equal(document.getElementById("withdrawal-player").textContent, "Mihai");
+    assert.equal(document.getElementById("withdrawal-match").textContent, `Meci: ${eventKey === "wednesday" ? "Miercuri" : "Vineri"} · 02 Oct 2026`);
+    assert.match(document.getElementById("withdrawal-consequence").textContent, /Locul lui va fi oferit/);
+
+    document.getElementById("keep-registration").listeners.click();
+    assert.equal(dialog.open, false);
+    assert.equal(document.activeElement, button);
+    assert.equal(requests.length, 1);
+    await document.getElementById("confirm-withdrawal").listeners.click();
+    assert.equal(requests.length, 1);
+
+    button.listeners.click();
+    dialog.close();
+    assert.equal(requests.length, 1);
+    await document.getElementById("confirm-withdrawal").listeners.click();
+    assert.equal(requests.length, 1);
+
+    button.listeners.click();
+    const withdrawal = document.getElementById("confirm-withdrawal").listeners.click();
+    assert.equal(dialog.open, false);
+    assert.equal(button.disabled, true);
+    await document.getElementById("confirm-withdrawal").listeners.click();
+    await withdrawal;
+    assert.equal(requests.length, 2);
+    assert.deepEqual(JSON.parse(requests[1].options.body), { registrationId: 1, confirmed: true });
+    assert.equal(requests[1].options.headers.Authorization, `Bearer ${tokenA}`);
+    assert.equal(document.getElementById("managed-registrations").children[0].querySelector("button"), null);
+    assert.match(document.getElementById("management-message").textContent, /Mihai a fost retras/);
+    assert.equal(document.activeElement, document.getElementById("management-message"));
+  });
+}
+
+test("waiting-list withdrawal explains its effect and renders the player's name as text", async () => {
+  const document = buildManagementDocument();
+  const name = '<img src=x onerror="alert(1)">';
+  const { requests } = loadScript("manage.js", document, [
+    { body: managedPayload([1], { registrations: [{ id: 1, name, active: true, status: "waiting", position: 19 }] }) },
+  ], { pathname: `/inscriere/${tokenA}` });
+  await flush();
+  const button = document.getElementById("managed-registrations").children[0].querySelector("button");
+  button.listeners.click();
+  assert.equal(button.textContent, `Retrage pe ${name}`);
+  assert.equal(document.getElementById("withdrawal-player").textContent, name);
+  assert.equal(document.getElementById("withdrawal-player").children.length, 0);
+  assert.match(document.getElementById("withdrawal-consequence").textContent, /din lista de așteptare/);
+  assert.doesNotMatch(document.getElementById("withdrawal-consequence").textContent, /Locul lui/);
+  assert.equal(requests.length, 1);
+});
+
+test("failed withdrawal keeps the named player available and requires a fresh confirmation to retry", async () => {
+  const document = buildManagementDocument();
+  const payload = managedPayload([1]);
+  const { requests } = loadScript("manage.js", document, [
+    { body: payload }, { ok: false, status: 503, body: { error: "Încearcă din nou" } },
+    { body: { ...payload, registrations: [{ ...payload.registrations[0], active: false, status: "withdrawn" }] } },
+  ], { pathname: `/inscriere/${tokenA}` });
+  await flush();
+  const button = document.getElementById("managed-registrations").children[0].querySelector("button");
+  button.listeners.click();
+  await document.getElementById("confirm-withdrawal").listeners.click();
+  assert.equal(button.disabled, false);
+  assert.equal(button.textContent, "Retrage pe Player 1");
+  assert.equal(document.getElementById("management-message").textContent, "Încearcă din nou");
+  await document.getElementById("confirm-withdrawal").listeners.click();
+  assert.equal(requests.length, 2);
+  button.listeners.click();
+  assert.equal(document.getElementById("withdrawal-player").textContent, "Player 1");
+  await document.getElementById("confirm-withdrawal").listeners.click();
+  assert.equal(requests.length, 3);
+  assert.match(document.getElementById("management-message").textContent, /Player 1 a fost retras/);
 });

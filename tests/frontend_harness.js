@@ -75,6 +75,10 @@ class FakeElement {
     this.listeners[type] = listener;
   }
 
+  focus() {
+    this.ownerDocument.activeElement = this;
+  }
+
   scrollIntoView(options) {
     this.scrollIntoViewOptions = options;
   }
@@ -175,6 +179,25 @@ class FakeTemplateElement extends FakeElement {
   }
 }
 
+class FakeDialogElement extends FakeElement {
+  constructor(ownerDocument, id) {
+    super("dialog", ownerDocument, id);
+    this.open = false;
+  }
+
+  showModal() {
+    this.previouslyFocusedElement = this.ownerDocument.activeElement;
+    this.open = true;
+  }
+
+  close() {
+    if (!this.open) return;
+    this.open = false;
+    this.previouslyFocusedElement?.focus();
+    this.listeners.close?.();
+  }
+}
+
 class FakeDocument {
   constructor() {
     this.elementsById = new Map();
@@ -208,7 +231,9 @@ class FakeDocument {
 
 function makeElement(document, tagName, id, classNames = []) {
   const element =
-    tagName === "template" ? new FakeTemplateElement(document, id) : new FakeElement(tagName, document, id);
+    tagName === "template" ? new FakeTemplateElement(document, id)
+      : tagName === "dialog" ? new FakeDialogElement(document, id)
+      : new FakeElement(tagName, document, id);
   classNames.forEach((className) => element.classList.add(className));
   document.register(element);
   return element;
@@ -317,6 +342,13 @@ function buildManagementDocument() {
   ["managed-registrations", "management-loading", "management-message", "management-intro", "back-to-event", "management-title", "management-kicker", "management-security-note"].forEach((id) => makeElement(document, "div", id));
   makeElement(document, "button", "copy-current-link");
   makeElement(document, "button", "refresh-management");
+  const dialog = makeElement(document, "dialog", "withdrawal-dialog");
+  ["withdrawal-player", "withdrawal-match", "withdrawal-consequence"].forEach((id) => {
+    dialog.appendChild(makeElement(document, "p", id));
+  });
+  ["keep-registration", "confirm-withdrawal"].forEach((id) => {
+    dialog.appendChild(makeElement(document, "button", id));
+  });
   return document;
 }
 
