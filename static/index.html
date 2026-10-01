@@ -10,7 +10,8 @@
     <title>Prezență săptămânală la fotbal</title>
     <script>
       (() => {
-        const storedTheme = localStorage.getItem("theme");
+        let storedTheme;
+        try { storedTheme = localStorage.getItem("theme"); } catch {}
         const theme =
           storedTheme ||
           (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -348,6 +349,7 @@
               <strong id="saved-management-title">Jucători înscriși de pe acest dispozitiv</strong>
               <p>Aici găsești toți jucătorii din înscrierile salvate pe acest dispozitiv. Verifică numele înainte de a retrage un jucător.</p>
               <div id="saved-management-links" class="saved-management-links"></div>
+              <p id="management-storage-note" role="status" aria-live="polite"></p>
             </section>
 
             <div id="signup-hint" class="hint-box">
@@ -438,6 +440,7 @@
       </div>
     </div>
 
-    <script src="/app.js?v=20261001-2" defer></script>
+    <script src="/management-store.js?v=20261001-3" defer></script>
+    <script src="/app.js?v=20261001-3" defer></script>
   </body>
 </html>

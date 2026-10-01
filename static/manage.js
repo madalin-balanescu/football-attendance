@@ -5,6 +5,7 @@ const managementIntro = document.getElementById("management-intro");
 const backToEvent = document.getElementById("back-to-event");
 const copyCurrentLinkButton = document.getElementById("copy-current-link");
 const refreshManagementButton = document.getElementById("refresh-management");
+const managementStorageNote = document.getElementById("management-storage-note");
 const withdrawalDialog = document.getElementById("withdrawal-dialog");
 const withdrawalPlayer = document.getElementById("withdrawal-player");
 const withdrawalMatch = document.getElementById("withdrawal-match");
@@ -15,7 +16,7 @@ const isCombinedManagement = window.location.pathname.replace(/\/+$/, "") === "/
 const selectedEvent = new URLSearchParams(window.location.search).get("event") === "wednesday" ? "wednesday" : "friday";
 const selectedDay = selectedEvent === "wednesday" ? "miercuri" : "vineri";
 const managementToken = (window.location.pathname.split("/").filter(Boolean).pop() || "").trim();
-const MANAGEMENT_LINKS_KEY = "football-attendance:management-links";
+const managementStore = window.footballManagementStore;
 let combinedLoadVersion = 0;
 let pendingWithdrawal = null;
 
@@ -27,7 +28,6 @@ function withdrawalButtonLabel(registration) {
   return `Retrage pe ${registration.name}`;
 }
 
-
 function managementHeaders(token = managementToken) {
   return {
     Authorization: `Bearer ${token}`,
@@ -36,29 +36,14 @@ function managementHeaders(token = managementToken) {
 }
 
 function savedManagementLinks() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(MANAGEMENT_LINKS_KEY) || "[]");
-    const seen = new Set();
-    return Array.isArray(parsed) ? parsed.filter((entry) => {
-      if (!/^\/inscriere\/[A-Za-z0-9_-]{43,128}$/.test(entry?.path || "") || seen.has(entry.path)) return false;
-      seen.add(entry.path);
-      return true;
-    }) : [];
-  } catch {
-    return [];
-  }
+  return managementStore.read();
 }
 
 function saveCurrentLink(eventKey) {
   if (isCombinedManagement) return;
   const path = window.location.pathname.replace(/\/$/, "");
-  try {
-    const links = savedManagementLinks().filter((entry) => entry.path !== path);
-    links.unshift({ path, eventKey, savedAt: new Date().toISOString() });
-    localStorage.setItem(MANAGEMENT_LINKS_KEY, JSON.stringify(links));
-  } catch {
-    // The private page remains usable when browser storage is unavailable.
-  }
+  managementStore.save(path, eventKey);
+  managementStorageNote.textContent = managementStore.storageMessage();
 }
 
 function statusLabel(registration) {
@@ -112,6 +97,7 @@ async function loadCombinedRegistrations() {
   managementLoading.classList.remove("hidden");
   refreshManagementButton.disabled = true;
   const links = savedManagementLinks();
+  managementStorageNote.textContent = managementStore.storageMessage();
   const results = await Promise.allSettled(links.map(async (entry) => {
     const token = entry.path.split("/").pop();
     const response = await fetch("/api/management", { headers: managementHeaders(token), cache: "no-store" });
@@ -143,11 +129,8 @@ async function loadCombinedRegistrations() {
       || a.registration.id - b.registration.id)
     .forEach(({ registration, payload, token }) => appendManagedPlayer(registration, payload, token));
   if (expired.size) {
-    try {
-      localStorage.setItem(MANAGEMENT_LINKS_KEY, JSON.stringify(savedManagementLinks().filter((entry) => !expired.has(entry.path))));
-    } catch {
-      // Unavailable storage does not prevent managing the loaded players.
-    }
+    managementStore.remove(expired);
+    managementStorageNote.textContent = managementStore.storageMessage();
   }
   managementMessage.textContent = failures
     ? "Unele înscrieri nu au putut fi încărcate. Apasă Actualizează pentru a reîncerca."
@@ -246,6 +229,7 @@ async function copyCurrentLink() {
 
 copyCurrentLinkButton.addEventListener("click", copyCurrentLink);
 refreshManagementButton.addEventListener("click", loadSubmission);
+window.addEventListener("online", loadSubmission);
 keepRegistrationButton.addEventListener("click", () => withdrawalDialog.close());
 withdrawalDialog.addEventListener("close", () => {
   if (!withdrawalDialog.open) pendingWithdrawal = null;
@@ -267,6 +251,8 @@ if (isCombinedManagement) {
   managementIntro.textContent = "Aici găsești toți jucătorii din înscrierile salvate pe acest dispozitiv. Verifică numele și data meciului înainte de a retrage un jucător.";
   document.getElementById("management-security-note").textContent = "Această pagină reunește înscrierile salvate în acest browser. Pe alt dispozitiv, deschide linkurile private primite la înscriere pentru a le adăuga aici.";
   copyCurrentLinkButton.classList.add("hidden");
-  window.addEventListener("storage", (event) => { if (event.key === MANAGEMENT_LINKS_KEY) loadSubmission(); });
+  window.addEventListener("storage", (event) => {
+    if (event.key === managementStore.key || event.key === null) loadSubmission();
+  });
 }
 loadSubmission();

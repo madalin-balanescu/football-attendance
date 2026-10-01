@@ -301,6 +301,7 @@ function buildAppDocument() {
   makeElement(document, "button", "copy-management-link");
   makeElement(document, "section", "saved-management-panel", ["hidden"]);
   makeElement(document, "div", "saved-management-links");
+  makeElement(document, "p", "management-storage-note");
   makeElement(document, "a", "withdraw-shortcut", ["hidden"]);
   makeElement(document, "div", "notification-panel", ["hidden"]);
   makeElement(document, "button", "notification-toggle");
@@ -339,6 +340,7 @@ function buildAppDocument() {
 
 function buildManagementDocument() {
   const document = new FakeDocument();
+  makeElement(document, "p", "management-storage-note");
   ["managed-registrations", "management-loading", "management-message", "management-intro", "back-to-event", "management-title", "management-kicker", "management-security-note"].forEach((id) => makeElement(document, "div", id));
   makeElement(document, "button", "copy-current-link");
   makeElement(document, "button", "refresh-management");
@@ -430,7 +432,24 @@ async function flush() {
 function loadScript(scriptName, document, responses, options = {}) {
   const scriptPath = path.join(__dirname, "..", "static", scriptName);
   const source = fs.readFileSync(scriptPath, "utf8");
-  const storage = new Map(Object.entries(options.storage || {}));
+  const storage = options.storage instanceof Map ? options.storage : new Map(Object.entries(options.storage || {}));
+  const tabStorage = options.tabStorage instanceof Map ? options.tabStorage : new Map(Object.entries(options.tabStorage || {}));
+  function storageApi(values, errors = {}) {
+    return {
+      getItem(key) {
+        if (errors.get) throw new Error("Storage access denied");
+        return values.get(key) ?? null;
+      },
+      setItem(key, value) {
+        if (errors.set) throw new Error("Storage quota exceeded");
+        values.set(key, String(value));
+      },
+      removeItem(key) {
+        if (errors.set) throw new Error("Storage access denied");
+        values.delete(key);
+      },
+    };
+  }
   const requests = [];
   const context = {
     document,
@@ -443,10 +462,8 @@ function loadScript(scriptName, document, responses, options = {}) {
       clearTimeout,
       setTimeout,
     },
-    localStorage: {
-      getItem: (key) => storage.get(key) ?? null,
-      setItem: (key, value) => storage.set(key, String(value)),
-    },
+    localStorage: storageApi(storage, options.localStorageErrors),
+    sessionStorage: storageApi(tabStorage, options.sessionStorageErrors),
     fetch: createFetchMock([...responses], requests),
     navigator: options.navigator,
     atob: (value) => Buffer.from(value, "base64").toString("binary"),
@@ -460,8 +477,14 @@ function loadScript(scriptName, document, responses, options = {}) {
   if (options.Notification) context.window.Notification = options.Notification;
   if (options.PushManager) context.window.PushManager = options.PushManager;
   context.globalThis = context;
+  context.window.localStorage = context.localStorage;
+  context.window.sessionStorage = context.sessionStorage;
+  if (["app.js", "manage.js"].includes(scriptName)) {
+    const storeSource = fs.readFileSync(path.join(__dirname, "..", "static", "management-store.js"), "utf8");
+    vm.runInNewContext(storeSource, context, { filename: "management-store.js" });
+  }
   vm.runInNewContext(source, context, { filename: scriptName });
-  return { context, document, requests, storage };
+  return { context, document, requests, storage, tabStorage };
 }
 
 module.exports = {

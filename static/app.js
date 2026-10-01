@@ -52,6 +52,7 @@ const successManagementLink = document.getElementById("success-management-link")
 const copyManagementLinkButton = document.getElementById("copy-management-link");
 const savedManagementPanel = document.getElementById("saved-management-panel");
 const savedManagementLinks = document.getElementById("saved-management-links");
+const managementStorageNote = document.getElementById("management-storage-note");
 const withdrawShortcut = document.getElementById("withdraw-shortcut");
 const adminPanel = document.getElementById("admin-panel");
 const adminLoginForm = document.getElementById("admin-login-form");
@@ -133,7 +134,7 @@ let wednesdayMemberBlurTimer = null;
 let isSubmissionLoading = false;
 
 const DASHBOARD_CACHE_KEY = `football-attendance:${eventKey}`;
-const MANAGEMENT_LINKS_KEY = "football-attendance:management-links";
+const managementStore = window.footballManagementStore;
 
 function eventApiUrl(path) {
   return `${path}?event=${eventKey}`;
@@ -400,6 +401,8 @@ function cacheDashboardPayload(payload) {
     delete publicPayload.inactiveRegistrations;
     delete publicPayload.removalHistory;
     delete publicPayload.authenticated;
+    delete publicPayload.managementPath;
+    delete publicPayload.submittedRegistrationIds;
     localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(publicPayload));
   } catch {
     // The live API remains the source of truth when browser storage is unavailable.
@@ -412,14 +415,7 @@ function absoluteManagementUrl(path) {
 }
 
 function readSavedManagementLinks() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(MANAGEMENT_LINKS_KEY) || "[]");
-    return Array.isArray(parsed)
-      ? parsed.filter((entry) => /^\/inscriere\/[A-Za-z0-9_-]{43,128}$/.test(entry?.path || ""))
-      : [];
-  } catch {
-    return [];
-  }
+  return managementStore.read();
 }
 
 function renderSavedManagementLinks() {
@@ -427,23 +423,33 @@ function renderSavedManagementLinks() {
   savedManagementLinks.innerHTML = "";
   savedManagementPanel.classList.toggle("hidden", links.length === 0);
   withdrawShortcut.classList.toggle("hidden", links.length === 0);
+  managementStorageNote.textContent = managementStore.storageMessage();
+  withdrawShortcut.setAttribute("href", eventApiUrl("/inscrierile-mele"));
+  withdrawShortcut.removeAttribute("target");
+  withdrawShortcut.removeAttribute("rel");
 
   if (!links.length) return;
-  const link = document.createElement("a");
-  link.setAttribute("href", eventApiUrl("/inscrierile-mele"));
-  link.className = "secondary-button inline-link-button";
-  link.textContent = "Vezi jucătorii înscriși";
-  savedManagementLinks.appendChild(link);
+  const memoryOnly = managementStore.mode === "memory";
+  if (memoryOnly) {
+    withdrawShortcut.setAttribute("href", links[0].path);
+    withdrawShortcut.setAttribute("target", "_blank");
+    withdrawShortcut.setAttribute("rel", "noopener noreferrer");
+  }
+  (memoryOnly ? links : [links[0]]).forEach((entry, index) => {
+    const link = document.createElement("a");
+    link.setAttribute("href", memoryOnly ? entry.path : eventApiUrl("/inscrierile-mele"));
+    link.className = "secondary-button inline-link-button";
+    link.textContent = memoryOnly && links.length > 1 ? `Vezi înscrierea ${index + 1}` : "Vezi jucătorii înscriși";
+    if (memoryOnly) {
+      link.setAttribute("target", "_blank");
+      link.setAttribute("rel", "noopener noreferrer");
+    }
+    savedManagementLinks.appendChild(link);
+  });
 }
 
 function saveManagementLink(path) {
-  const links = readSavedManagementLinks().filter((entry) => entry.path !== path);
-  links.unshift({ path, eventKey, savedAt: new Date().toISOString() });
-  try {
-    localStorage.setItem(MANAGEMENT_LINKS_KEY, JSON.stringify(links));
-  } catch {
-    // The visible link can still be copied when browser storage is unavailable.
-  }
+  managementStore.save(path, eventKey);
   renderSavedManagementLinks();
 }
 
@@ -623,7 +629,11 @@ function formatRegistrationTime(value) {
 function applyTheme(theme) {
   currentTheme = theme;
   document.documentElement.dataset.theme = theme;
-  localStorage.setItem("theme", theme);
+  try {
+    localStorage.setItem("theme", theme);
+  } catch {
+    // Storage restrictions must not block signup or registration retrieval.
+  }
   themeToggleLabel.textContent = theme === "dark" ? "Mod luminos" : "Mod întunecat";
   themeIconSun.classList.toggle("hidden", theme !== "dark");
   themeIconMoon.classList.toggle("hidden", theme === "dark");
@@ -748,7 +758,6 @@ function flashSuccessPanel(payload) {
     successSummary.textContent = "Salvează linkul pentru modificare sau retragere.";
     successManagementLink.setAttribute("href", managementPath);
     copyManagementLinkButton.textContent = "Copiază linkul";
-    saveManagementLink(managementPath);
   }
   successPanel.focus?.({ preventScroll: true });
   if (managementPath && typeof successPanel.scrollIntoView === "function") {
@@ -992,6 +1001,7 @@ async function submitRegistration(event) {
       throw new Error(payload.error || "Înscrierea nu a putut fi salvată.");
     }
 
+    if (payload.managementPath) saveManagementLink(payload.managementPath);
     form.reset();
     wednesdayMemberSearch.value = "";
     closeWednesdayMemberOptions();
@@ -1232,6 +1242,9 @@ copyManagementLinkButton.addEventListener("click", () =>
   copyManagementLink(successManagementLink.getAttribute("href"), copyManagementLinkButton),
 );
 notificationToggle.addEventListener("click", toggleNotifications);
+window.addEventListener("storage", (event) => {
+  if (event.key === managementStore.key || event.key === null) renderSavedManagementLinks();
+});
 
 applyEventContent();
 applyTheme(currentTheme);

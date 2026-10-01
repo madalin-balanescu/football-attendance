@@ -258,6 +258,12 @@ the link but have separate `Retrage` actions. A withdrawal requires the private 
 registration ID, and explicit confirmation; names alone cannot remove a registration.
 Cancellation attempts are limited to 5 per client IP in 10 minutes.
 
+Registration access survives page reloads and switching from Wi-Fi to mobile data
+in the same browser. A shared storage layer uses local storage, then tab storage
+and memory when storage is unavailable, and explains when private links must be
+copied. See [browser registration retrieval](docs/browser-registrations.md) for
+storage lifetimes, recovery, and network behavior.
+
 The saved-links panel shows a single `Vezi înscrierea` entry. It combines players from
 saved submissions for the selected football day, with match dates and a separate withdrawal
 action per player.
@@ -434,7 +440,7 @@ Run everything:
 
 ```bash
 python3 -Wd -m unittest discover -s tests -v
-node --test tests/test_frontend.js
+node --test tests/test_*.js
 ```
 
 Additional quick checks:
@@ -443,6 +449,7 @@ Additional quick checks:
 python3 -m py_compile server.py
 node --check static/app.js
 node --check static/manage.js
+node --check static/management-store.js
 node --check static/teams.js
 node --check static/history.js
 node --check static/service-worker.js
@@ -455,6 +462,7 @@ node --check static/service-worker.js
 - [static/app.js](static/app.js) - main page behavior
 - [static/manage.html](static/manage.html) - private and combined registration-management page
 - [static/manage.js](static/manage.js) - day-specific aggregation, private-link loading, and withdrawal behavior
+- [static/management-store.js](static/management-store.js) - shared persistent, tab, and memory storage for private registration links
 - [static/history.html](static/history.html) and [static/history.js](static/history.js) - public current-session removal history
 - [static/teams.html](static/teams.html) - dedicated team-builder page
 - [static/teams.js](static/teams.js) - team-builder interactions
@@ -465,6 +473,7 @@ node --check static/service-worker.js
 - [tests/test_server.py](tests/test_server.py) - backend integration tests
 - [tests/test_ui_contract.py](tests/test_ui_contract.py) - static accessibility, responsive, and PWA contracts
 - [tests/test_frontend.js](tests/test_frontend.js) - frontend script tests
+- [tests/test_management_storage.js](tests/test_management_storage.js) - browser persistence, fallback storage, and retrieval regression tests
 - [tests/frontend_harness.js](tests/frontend_harness.js) - fake DOM test harness
 - [render.yaml](render.yaml) - Render deployment config
 

@@ -104,7 +104,14 @@ class FrontendContractTestCase(unittest.TestCase):
         self.assertIn('addEventListener("controllerchange"', app_script)
         self.assertIn('/styles.css?v=20260924-3', attendance_page)
         self.assertIn('/ui-enhancements.css?v=20261001-2', attendance_page)
-        self.assertIn('/app.js?v=20261001-2', attendance_page)
+        self.assertIn('/app.js?v=20261001-3', attendance_page)
+        management_page = (STATIC_DIR / "manage.html").read_text(encoding="utf-8")
+        for page, script in ((attendance_page, "app.js"), (management_page, "manage.js")):
+            store_script = '/management-store.js?v=20261001-3'
+            page_script = f'/{script}?v=20261001-3'
+            self.assertLess(page.index(store_script), page.index(page_script))
+            self.assertIn(store_script, worker)
+            self.assertIn(page_script, worker)
         self.assertIn('id="notification-toggle"', attendance_page)
         self.assertIn('addEventListener("push"', worker)
         self.assertIn('addEventListener("notificationclick"', worker)

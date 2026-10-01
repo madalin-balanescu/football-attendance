@@ -9,7 +9,8 @@
     <title>Administrare înscriere</title>
     <script>
       (() => {
-        const storedTheme = localStorage.getItem("theme");
+        let storedTheme;
+        try { storedTheme = localStorage.getItem("theme"); } catch {}
         const theme = storedTheme ||
           (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
         document.documentElement.dataset.theme = theme;
@@ -37,6 +38,7 @@
 
         <p id="management-message" class="form-message" role="status" aria-live="polite" tabindex="-1"></p>
         <div id="management-loading" class="management-loading">Se încarcă înscrierea...</div>
+        <p id="management-storage-note" role="status" aria-live="polite"></p>
         <div id="managed-registrations" class="managed-registrations"></div>
 
         <aside id="management-security-note" class="management-security-note">
@@ -58,6 +60,7 @@
         </div>
       </div>
     </dialog>
-    <script src="/manage.js?v=20261001-2" defer></script>
+    <script src="/management-store.js?v=20261001-3" defer></script>
+    <script src="/manage.js?v=20261001-3" defer></script>
   </body>
 </html>

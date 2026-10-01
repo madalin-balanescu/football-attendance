@@ -1139,6 +1139,33 @@ class AttendanceServerTestCase(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual([row["name"] for row in managed["registrations"]], ["Ion", "Vlad"])
 
+    def test_management_survives_ip_changes_without_a_session_cookie(self) -> None:
+        for event_key in (server.FRIDAY_EVENT, server.WEDNESDAY_EVENT):
+            with self.subTest(event=event_key):
+                server.set_setting(server.signup_setting_key(event_key), "force_open")
+                status, created, _ = self.dispatch(
+                    "POST", "/api/registrations",
+                    {"person1": "Own player", "person2": "Friend", "event": event_key},
+                    client_ip="203.0.113.10",
+                )
+                self.assertEqual(status, 201)
+                token = str(created["managementPath"]).rsplit("/", 1)[-1]
+                status, retrieved, _ = self.dispatch(
+                    "GET", "/api/management", client_ip="198.51.100.22",
+                    authorization=f"Bearer {token}",
+                )
+                self.assertEqual(status, 200)
+                self.assertEqual([row["name"] for row in retrieved["registrations"]], ["Own player", "Friend"])
+                status, withdrawn, _ = self.dispatch(
+                    "POST", "/api/management/withdraw",
+                    {"registrationId": created["submittedRegistrationIds"][1], "confirmed": True},
+                    client_ip="2001:db8::30", authorization=f"Bearer {token}",
+                )
+                self.assertEqual(status, 200)
+                self.assertEqual([row["active"] for row in withdrawn["registrations"]], [True, False])
+                status, _, _ = self.dispatch("GET", "/api/management", client_ip="198.51.100.22")
+                self.assertEqual(status, 404)
+
     def test_withdrawal_keeps_audit_row_and_promotes_first_waiting_player(self) -> None:
         token, token_hash = server.create_management_token()
         created_at = datetime(2026, 9, 1, 12, 0, 0)
