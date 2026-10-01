@@ -10,6 +10,7 @@ import re
 import secrets
 import sqlite3
 import sys
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections import defaultdict
@@ -850,6 +851,12 @@ def sanitize_names(payload: dict[str, object]) -> list[str]:
     return names
 
 
+def normalized_registration_name(name: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", name.casefold())
+    without_accents = "".join(character for character in decomposed if not unicodedata.combining(character))
+    return " ".join(without_accents.split())
+
+
 def client_ip_from_request(headers, client_address: object = None) -> str:
     forwarded_for = str(headers.get("X-Forwarded-For", ""))
     candidates = [forwarded_for.split(",", 1)[0].strip()]
@@ -1448,8 +1455,20 @@ def insert_rate_limited_registrations(
     if len(normalized_member_ids) != len(names):
         raise ValueError("Numărul de membri nu corespunde înscrierilor.")
 
+    normalized_names = [normalized_registration_name(name) for name in names]
+    player_keys = [
+        f"member:{member_id}" if member_id else f"name:{name}"
+        for name, member_id in zip(normalized_names, normalized_member_ids)
+    ]
+    if len(set(player_keys)) != len(player_keys):
+        return [], {"reason": "duplicate_names"}
+
     with get_connection() as connection:
         if using_postgres():
+            connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                (f"registration:{event_key}:{week_key}",),
+            )
             lock_key = f"{ip_hash}:{event_key}:{week_key}"
             connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (lock_key,))
             for member_id in sorted(value for value in normalized_member_ids if value):
@@ -1505,6 +1524,26 @@ def insert_rate_limited_registrations(
             ).fetchone()
             if existing_member is not None:
                 return [], {"reason": "member_registered", "memberId": member_id}
+
+        placeholder = "%s" if using_postgres() else "?"
+        active_value = "TRUE" if using_postgres() else "1"
+        active_names = {
+            normalized_registration_name(row[0])
+            for row in connection.execute(
+                f"""
+                SELECT submitted_name FROM registrations
+                WHERE event_key = {placeholder} AND week_key = {placeholder}
+                  AND is_active = {active_value}
+                """,
+                (event_key, week_key),
+            ).fetchall()
+        }
+        duplicate_names = [
+            name for name, normalized, member_id in zip(names, normalized_names, normalized_member_ids)
+            if member_id is None and normalized in active_names
+        ]
+        if duplicate_names:
+            return [], {"reason": "name_registered", "names": duplicate_names}
 
         submission_times = [
             row[0] if isinstance(row[0], datetime) else datetime.fromisoformat(str(row[0]))
@@ -2384,17 +2423,48 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             getattr(self, "client_address", None),
         )
         management_token, management_token_hash = create_management_token()
+        ip_hash = hash_client_ip(client_ip)
         submitted_registration_ids, rate_limit = insert_rate_limited_registrations(
             names,
             week_key,
             event_key,
-            hash_client_ip(client_ip),
+            ip_hash,
             now=request_time,
             management_token_hash=management_token_hash,
             member_ids=member_ids,
             push_subscription=push_subscription,
         )
+        self.log_message(
+            "registration_audit %s",
+            json.dumps({
+                "eventKey": event_key,
+                "weekKey": week_key,
+                "clientHash": ip_hash,
+                "nameCount": len(names),
+                "result": "rejected" if rate_limit else "created",
+                "reason": rate_limit["reason"] if rate_limit else None,
+                "registrationIds": submitted_registration_ids,
+            }),
+        )
         if rate_limit:
+            if rate_limit["reason"] in {"duplicate_names", "name_registered"}:
+                if rate_limit["reason"] == "duplicate_names":
+                    error = (
+                        "Ai completat același jucător de două ori. "
+                        "Dacă vii singur, lasă câmpul pentru al doilea jucător gol."
+                    )
+                    status = HTTPStatus.BAD_REQUEST
+                else:
+                    error = (
+                        f"Deja înscris la acest meci: {', '.join(rate_limit['names'])}. "
+                        "Verifică lista și trimite doar jucători care nu sunt deja înscriși."
+                    )
+                    status = HTTPStatus.CONFLICT
+                self.send_json(
+                    {"error": error, "signupWindow": signup_window},
+                    status=status,
+                )
+                return
             if rate_limit["reason"] == "member_registered":
                 self.send_json(
                     {

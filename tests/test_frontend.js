@@ -330,6 +330,81 @@ test("app.js submitRegistration updates message and resets form on success", asy
   assert.equal(JSON.parse(requests[2].options.body).event, "friday");
 });
 
+test("app.js rejects the same player in both fields before sending a request", async () => {
+  const document = buildAppDocument();
+  const { context, requests } = loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: false } },
+    { body: appPayload({ registrations: [] }) },
+    { status: 201, body: { ...appPayload(), message: "Înscriere reușită." } },
+  ]);
+  await flush();
+  document.getElementById("person1").value = "Florin Dănilă";
+  document.getElementById("person2").value = "  FLORIN   DANILA  ";
+  await context.submitRegistration({ preventDefault() {} });
+  assert.equal(requests.length, 2);
+  assert.match(document.getElementById("form-message").textContent, /același jucător/);
+  assert.equal(document.getElementById("person1").value, "Florin Dănilă");
+  assert.equal(document.getElementById("submit-button").disabled, false);
+
+  document.getElementById("person2").value = "";
+  await context.submitRegistration({ preventDefault() {} });
+  assert.equal(requests.length, 3);
+  assert.equal(JSON.parse(requests[2].options.body).person2, "");
+});
+
+test("app.js sends only one request while the registration is still pending", async () => {
+  const document = buildAppDocument();
+  const { context } = loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: false } },
+    { body: appPayload({ registrations: [] }) },
+  ]);
+  await flush();
+  let finishRequest;
+  let requestCount = 0;
+  context.fetch = () => {
+    requestCount += 1;
+    return new Promise((resolve) => { finishRequest = resolve; });
+  };
+  document.getElementById("person1").value = "Cristian Afloarei";
+  const pending = context.submitRegistration({ preventDefault() {} });
+  await context.submitRegistration({ preventDefault() {} });
+  assert.equal(requestCount, 1);
+  assert.equal(document.getElementById("submit-button").disabled, true);
+  finishRequest({
+    ok: true,
+    status: 201,
+    text: async () => JSON.stringify({ ...appPayload(), message: "Înscriere reușită." }),
+  });
+  await pending;
+  assert.equal(document.getElementById("submit-button").disabled, false);
+  assert.equal(document.getElementById("person1").value, "");
+});
+
+test("app.js preserves the form after a duplicate rejection and allows a corrected retry", async () => {
+  const document = buildAppDocument();
+  const { context, requests } = loadScript("app.js", document, [
+    { body: { enabled: true, authenticated: false } },
+    { body: appPayload() },
+    { ok: false, status: 409, body: { error: "Deja înscris la acest meci: Ion." } },
+    { status: 201, body: { ...appPayload(), message: "Înscriere reușită." } },
+  ]);
+  await flush();
+  document.getElementById("person1").value = "Ion";
+  document.getElementById("person2").value = "Vlad";
+  await context.submitRegistration({ preventDefault() {} });
+  assert.match(document.getElementById("form-message").textContent, /Deja înscris/);
+  assert.equal(document.getElementById("person1").value, "Ion");
+  assert.equal(document.getElementById("person2").value, "Vlad");
+  assert.equal(document.getElementById("submit-button").disabled, false);
+  assert.equal(document.getElementById("success-panel").classList.contains("hidden"), true);
+
+  document.getElementById("person1").value = "Vlad";
+  document.getElementById("person2").value = "";
+  await context.submitRegistration({ preventDefault() {} });
+  assert.equal(requests.length, 4);
+  assert.equal(document.getElementById("person1").value, "");
+});
+
 test("app.js keeps and displays the private management link after submission", async () => {
   const document = buildAppDocument();
   const token = "a".repeat(43);

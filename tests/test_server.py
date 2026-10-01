@@ -5,9 +5,11 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from http import HTTPStatus
 from pathlib import Path
+from threading import Barrier
 from unittest.mock import Mock, patch
 
 import server
@@ -451,6 +453,139 @@ class AttendanceServerTestCase(unittest.TestCase):
             payload["submittedRegistrationIds"],
             [registration["id"] for registration in payload["registrations"]],
         )
+
+    def test_registration_rejects_the_same_player_in_both_fields_without_side_effects(self) -> None:
+        server.set_setting("signup_mode", "force_open")
+        with patch("server.queue_match_notification") as notify:
+            status, payload, _ = self.dispatch(
+                "POST", "/api/registrations",
+                {"person1": "Florin Dănilă", "person2": "  FLORIN   DANILA  "},
+            )
+        self.assertEqual(status, HTTPStatus.BAD_REQUEST)
+        self.assertIn("același jucător", payload["error"])
+        self.assertNotIn("managementPath", payload)
+        self.assertEqual(server.fetch_registrations(self.week_key), [])
+        with server.get_connection() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM registration_rate_limits").fetchone()[0], 0)
+        notify.assert_not_called()
+
+    def test_registration_rejects_existing_names_from_another_device_atomically(self) -> None:
+        server.set_setting("signup_mode", "force_open")
+        self.dispatch("POST", "/api/registrations", {"person1": "Cristian Afloarei"})
+        with patch("server.queue_match_notification") as notify:
+            status, payload, _ = self.dispatch(
+                "POST", "/api/registrations",
+                {"person1": "Alt jucător", "person2": "  CRISTIAN   AFLOAREI "},
+                client_ip="198.51.100.100",
+            )
+        self.assertEqual(status, HTTPStatus.CONFLICT)
+        self.assertIn("Deja înscris", payload["error"])
+        self.assertEqual([row["name"] for row in server.fetch_registrations(self.week_key)], ["Cristian Afloarei"])
+        with server.get_connection() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM registration_rate_limits").fetchone()[0], 1)
+        notify.assert_not_called()
+
+    def test_duplicate_name_checks_are_scoped_to_active_event_and_week(self) -> None:
+        moment = datetime(2026, 10, 1, 12, 0, tzinfo=server.APP_TIMEZONE)
+        server.insert_registrations(["Florin Dănilă"], "2026-W39")
+        for event_key in (server.FRIDAY_EVENT, server.WEDNESDAY_EVENT):
+            inserted, rejection = server.insert_rate_limited_registrations(
+                ["Florin Danila"], "2026-W40", event_key,
+                server.hash_client_ip("198.51.100.101"), now=moment,
+            )
+            self.assertEqual(len(inserted), 1)
+            self.assertIsNone(rejection)
+        inserted, rejection = server.insert_rate_limited_registrations(
+            ["FLORIN  DĂNILĂ"], "2026-W40", server.FRIDAY_EVENT,
+            server.hash_client_ip("198.51.100.102"), now=moment,
+        )
+        self.assertEqual(inserted, [])
+        self.assertEqual(rejection["reason"], "name_registered")
+
+    def test_player_can_register_again_after_withdrawal_or_organizer_removal(self) -> None:
+        server.set_setting("signup_mode", "force_open")
+        cookie = self.login_admin()
+        for source in ("self", "organizer"):
+            with self.subTest(source=source):
+                name = f"Jucător {source}"
+                _, created, _ = self.dispatch("POST", "/api/registrations", {"person1": name})
+                registration_id = created["submittedRegistrationIds"][0]
+                if source == "self":
+                    token = created["managementPath"].rsplit("/", 1)[1]
+                    status, _, _ = self.dispatch(
+                        "POST", "/api/management/withdraw",
+                        {"registrationId": registration_id, "confirmed": True},
+                        authorization=f"Bearer {token}",
+                    )
+                else:
+                    status, _, _ = self.dispatch(
+                        "POST", "/api/admin/delete-registration",
+                        {"id": registration_id}, cookie=cookie,
+                    )
+                self.assertEqual(status, HTTPStatus.OK)
+                status, _, _ = self.dispatch(
+                    "POST", "/api/registrations", {"person1": name},
+                    client_ip="198.51.100.103",
+                )
+                self.assertEqual(status, HTTPStatus.CREATED)
+
+    def test_concurrent_duplicate_registrations_from_different_clients_create_one_row(self) -> None:
+        barrier = Barrier(2)
+
+        def submit(client_ip: str):
+            barrier.wait(timeout=5)
+            return server.insert_rate_limited_registrations(
+                ["Florin Danila"], self.week_key, server.FRIDAY_EVENT,
+                server.hash_client_ip(client_ip),
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(submit, ["198.51.100.104", "198.51.100.105"]))
+        self.assertEqual(sum(len(ids) for ids, _ in results), 1)
+        self.assertEqual([rejection["reason"] for _, rejection in results if rejection], ["name_registered"])
+        self.assertEqual(len(server.fetch_registrations(self.week_key)), 1)
+
+    def test_existing_duplicate_rows_are_preserved_and_prevent_further_duplicates(self) -> None:
+        server.insert_registrations(["Florin Danila", "Florin Dănilă"], self.week_key)
+        server.ensure_database()
+        inserted, rejection = server.insert_rate_limited_registrations(
+            ["Florin Danila"], self.week_key, server.FRIDAY_EVENT,
+            server.hash_client_ip("198.51.100.106"),
+        )
+        self.assertEqual(inserted, [])
+        self.assertEqual(rejection["reason"], "name_registered")
+        self.assertEqual(len(server.fetch_registrations(self.week_key)), 2)
+
+    def test_distinct_wednesday_members_can_share_a_display_name(self) -> None:
+        inserted, rejection = server.insert_rate_limited_registrations(
+            ["Alex", "Alex"], self.week_key, server.WEDNESDAY_EVENT,
+            server.hash_client_ip("198.51.100.107"), member_ids=["wm-010", "wm-019"],
+        )
+        self.assertEqual(len(inserted), 2)
+        self.assertIsNone(rejection)
+        inserted, rejection = server.insert_rate_limited_registrations(
+            ["Alex"], self.week_key, server.WEDNESDAY_EVENT,
+            server.hash_client_ip("198.51.100.108"), member_ids=["wm-010"],
+        )
+        self.assertEqual(inserted, [])
+        self.assertEqual(rejection["reason"], "member_registered")
+
+    def test_registration_audit_records_outcome_without_names_ips_or_tokens(self) -> None:
+        server.set_setting("signup_mode", "force_open")
+        with patch.object(FakeAttendanceHandler, "log_message") as log:
+            _, created, _ = self.dispatch("POST", "/api/registrations", {"person1": "Cristian Afloarei"})
+            self.dispatch("POST", "/api/registrations", {"person1": "Cristian Afloarei"})
+            self.dispatch("POST", "/api/registrations", {"person1": "Florin", "person2": "Florin"})
+        entries = [json.loads(call.args[1]) for call in log.call_args_list]
+        self.assertEqual([entry["result"] for entry in entries], ["created", "rejected", "rejected"])
+        self.assertEqual([entry["reason"] for entry in entries], [None, "name_registered", "duplicate_names"])
+        self.assertEqual(entries[0]["registrationIds"], created["submittedRegistrationIds"])
+        self.assertEqual(entries[0]["clientHash"], server.hash_client_ip("203.0.113.10"))
+        self.assertEqual(entries[0]["weekKey"], self.week_key)
+        self.assertEqual(entries[0]["eventKey"], "friday")
+        serialized = json.dumps(entries)
+        for private_value in ("Cristian", "Florin", "203.0.113.10", created["managementPath"].rsplit("/", 1)[1]):
+            self.assertNotIn(private_value, serialized)
 
     def test_registration_rate_limit_blocks_fourth_form_within_ten_minutes(self) -> None:
         server.set_setting("signup_mode", "force_open")

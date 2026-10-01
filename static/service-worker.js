@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "football-attendance-";
-const CACHE_NAME = `${CACHE_PREFIX}v23`;
+const CACHE_NAME = `${CACHE_PREFIX}v25`;
 const ASSET_VERSION = "20260924-3";
 const APP_SHELL = [
   "/",
@@ -10,7 +10,7 @@ const APP_SHELL = [
   "/history.html",
   `/styles.css?v=${ASSET_VERSION}`,
   `/ui-enhancements.css?v=${ASSET_VERSION}`,
-  `/app.js?v=${ASSET_VERSION}`,
+  "/app.js?v=20261001-1",
   `/teams.js?v=${ASSET_VERSION}`,
   `/manage.js?v=${ASSET_VERSION}`,
   `/history.js?v=${ASSET_VERSION}`,

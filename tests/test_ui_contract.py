@@ -24,6 +24,17 @@ class IdCollector(HTMLParser):
 
 
 class FrontendContractTestCase(unittest.TestCase):
+    def test_second_player_field_is_optional_distinct_and_not_autofilled(self) -> None:
+        source = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Numele tău complet (ca în WhatsApp)", source)
+        self.assertIn("Alt jucător (opțional)", source)
+        self.assertIn("Dacă vii singur, lasă acest câmp gol.", source)
+        second_input = re.search(r'<input\s+id="person2"(.*?)/>', source, re.DOTALL)
+        self.assertIsNotNone(second_input)
+        self.assertIn('autocomplete="off"', second_input.group(1))
+        self.assertIn('aria-describedby="second-player-help"', second_input.group(1))
+        self.assertNotIn("required", second_input.group(1))
+
     def test_pages_have_unique_ids_and_accessibility_landmarks(self) -> None:
         for filename in ("index.html", "teams.html", "history.html"):
             with self.subTest(filename=filename):
@@ -93,7 +104,7 @@ class FrontendContractTestCase(unittest.TestCase):
         self.assertIn('addEventListener("controllerchange"', app_script)
         self.assertIn('/styles.css?v=20260924-3', attendance_page)
         self.assertIn('/ui-enhancements.css?v=20260924-3', attendance_page)
-        self.assertIn('/app.js?v=20260924-3', attendance_page)
+        self.assertIn('/app.js?v=20261001-1', attendance_page)
         self.assertIn('id="notification-toggle"', attendance_page)
         self.assertIn('addEventListener("push"', worker)
         self.assertIn('addEventListener("notificationclick"', worker)

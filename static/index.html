@@ -292,7 +292,7 @@
 
               <div id="standard-signup-fields">
                 <label class="field">
-                  <span>Numele persoanei 1 (exact cum apare în WhatsApp)</span>
+                  <span>Numele tău complet (ca în WhatsApp)</span>
                   <input
                     id="person1"
                     name="person1"
@@ -306,16 +306,18 @@
                 </label>
 
                 <label class="field">
-                  <span>Numele persoanei 2 (opțional)</span>
+                  <span>Alt jucător (opțional)</span>
                   <input
                     id="person2"
                     name="person2"
                     type="text"
                     maxlength="80"
-                    placeholder="Ex: Alex"
-                    autocomplete="name"
+                    placeholder="Numele complet al colegului"
+                    autocomplete="off"
+                    aria-describedby="second-player-help"
                     enterkeyhint="send"
                   />
+                  <small id="second-player-help" class="field-help">Dacă vii singur, lasă acest câmp gol.</small>
                 </label>
               </div>
 
@@ -436,6 +438,6 @@
       </div>
     </div>
 
-    <script src="/app.js?v=20260924-3" defer></script>
+    <script src="/app.js?v=20261001-1" defer></script>
   </body>
 </html>

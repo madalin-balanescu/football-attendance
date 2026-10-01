@@ -185,6 +185,63 @@ successful registration, the picker resets and remains available for the next se
 
 Outside each event's window, its form is locked. Friday and Wednesday admin overrides are stored independently.
 
+### Duplicate registrations
+
+Enter your full name in the first field. The optional second field is for a different
+player; leave it empty when registering alone. Browser name autofill is disabled for
+that second field. Repeated submits while a request is pending are ignored.
+
+The public API rejects the same name in both fields (`400`) and a name already active
+on the same event/week roster (`409`). Matching ignores capitalization, accents, and
+extra whitespace, while the displayed spelling is preserved. If either player is a
+duplicate, the whole form is rejected: no partial registration, new management link,
+rate-limit charge, or notification is created. The error keeps the fields available
+for correction. This also protects retries after a lost response and requests from
+different browsers or IP addresses. SQLite serializes the check and insert with
+`BEGIN IMMEDIATE`; PostgreSQL takes an event/week transaction advisory lock before
+checking the active names.
+
+Withdrawn or organizer-removed players can register again. Other events and weeks
+have independent rosters. Existing rows and historical backups are preserved; the
+guard does not automatically remove old duplicates.
+
+Names are not verified identities: `Florin` and `Florin Danila`, misspellings, and
+reversed word order are different names. Two people with the same full name need
+distinct names on the free-text list. Wednesday priority registrations use member
+IDs, so two different members with the same display name can both register.
+Use consistent full names; a member picker with stable
+player IDs, as used in Wednesday's priority window, is the stronger approach when
+aliases must also be prevented.
+
+After deployment, Render application logs include a `registration_audit` JSON record
+for every accepted submission or rejection by duplicate/rate-limit checks. It contains
+the event, ISO week, HMAC client hash, name count, outcome/reason, and created row IDs;
+it excludes player names, raw IPs, and private management tokens. The client hash
+helps compare repeated requests but cannot identify a player or prove who submitted
+a form. These records are diagnostic logs, not an additional persistent audit table.
+The previous request logs do not record form bodies, so older duplicate submissions
+must be investigated through saved backups and roster/removal timestamps.
+
+To inspect an affected list without changing data (SQLite):
+
+```sql
+SELECT id, submitted_name, created_at, is_active, cancelled_at
+FROM registrations
+WHERE event_key = 'friday' AND week_key = '2026-W40'
+ORDER BY created_at, id;
+
+SELECT submitted_name, created_at, removed_at, removal_source
+FROM registration_removals
+WHERE event_key = 'friday' AND week_key = '2026-W40'
+ORDER BY removed_at, created_at;
+```
+
+Choose the affected event/week. In an authorized backup, matching management-token
+hashes establish that two rows came from one form; do not publish those hashes or
+the backup. Matching timestamps alone suggest a shared submission but do not prove
+whether the fields were typed or autofilled. Inspect the current active roster before
+removing a duplicate, since an organizer or player may already have removed it.
+
 Each client IP can submit at most:
 
 - 3 registration forms per 10 minutes
@@ -333,6 +390,9 @@ Backend coverage includes:
 - Sunday cleanup and Monday catch-up
 - database migration of existing rows to Friday
 - registration validation
+- duplicate names within a form and against active rosters, including concurrent requests
+- duplicate rejection without partial writes, quota charges, or notifications
+- registration audit metadata and name/IP/token privacy
 - short-window and weekly registration rate limits
 - event isolation and anonymized IP storage for rate limits
 - registration ordering

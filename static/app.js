@@ -223,6 +223,11 @@ function normalizeWednesdayMemberSearch(value) {
     .trim().toLocaleLowerCase("ro-RO");
 }
 
+function normalizeRegistrationName(value) {
+  return String(value).normalize("NFKD").replace(/\p{M}/gu, "")
+    .trim().replace(/\s+/g, " ").toLocaleLowerCase("ro-RO");
+}
+
 function closeWednesdayMemberOptions() {
   isWednesdayMemberListOpen = false;
   activeWednesdayMemberIndex = -1;
@@ -930,6 +935,10 @@ function setAdminExpanded(expanded) {
 async function submitRegistration(event) {
   event.preventDefault();
 
+  if (isSubmissionLoading) {
+    return;
+  }
+
   if (!isSignupWindowOpen) {
     formMessage.textContent = signupWindowMessage.textContent;
     return;
@@ -940,6 +949,12 @@ async function submitRegistration(event) {
   if (isMemberOnlyPhase() && !selectedMember) {
     formMessage.textContent = "Selectează numele tău din lista membrilor WhatsApp.";
     wednesdayMemberSearch.focus?.();
+    return;
+  }
+  if (!isMemberOnlyPhase() && person2Input.value.trim()
+      && normalizeRegistrationName(person1Input.value) === normalizeRegistrationName(person2Input.value)) {
+    formMessage.textContent = "Ai completat același jucător de două ori. Dacă vii singur, lasă câmpul pentru al doilea jucător gol.";
+    person2Input.focus?.();
     return;
   }
   setSubmissionLoading(true);
