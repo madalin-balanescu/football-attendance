@@ -30,8 +30,6 @@ const matchDateSubtitle = document.getElementById("match-date-subtitle");
 const matchLocationLink = document.getElementById("match-location-link");
 const matchLocationName = document.getElementById("match-location-name");
 const lockedScheduleCopy = document.getElementById("locked-schedule-copy");
-const fridayEventLink = document.getElementById("friday-event-link");
-const wednesdayEventLink = document.getElementById("wednesday-event-link");
 const teamsPageLink = document.getElementById("teams-page-link");
 const emptyStateTemplate = document.getElementById("empty-state-template");
 const signupStateTitle = document.getElementById("signup-state-title");
@@ -157,8 +155,6 @@ function applyEventContent() {
     `Deschide traseul către ${content.locationName} în Google Maps`,
   );
   lockedScheduleCopy.textContent = content.lockedSchedule;
-  fridayEventLink.setAttribute("aria-current", eventKey === "friday" ? "page" : "false");
-  wednesdayEventLink.setAttribute("aria-current", eventKey === "wednesday" ? "page" : "false");
   backupWeekLink.setAttribute("href", eventApiUrl("/api/admin/backup-week"));
   removalHistoryLink.setAttribute("href", eventApiUrl("/istoric"));
   withdrawShortcut.setAttribute("href", eventApiUrl("/inscrierile-mele"));

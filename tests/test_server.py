@@ -76,6 +76,10 @@ class AttendanceServerTestCase(unittest.TestCase):
         server.RATE_LIMIT_SECRET = "test-rate-limit-secret"
         server.ensure_database()
         self.week_key = server.current_week_key()
+        # Keep the Wednesday signup logic covered for when web signup resumes.
+        wednesday_pause = patch.object(server, "WEDNESDAY_SIGNUP_PAUSED", False)
+        wednesday_pause.start()
+        self.addCleanup(wednesday_pause.stop)
 
     def tearDown(self) -> None:
         self.tempdir.cleanup()
@@ -193,6 +197,62 @@ class AttendanceServerTestCase(unittest.TestCase):
             server.format_romanian_date(moment, include_time=True),
             "06 Mai 2026 19:30",
         )
+
+    def test_wednesday_routes_show_the_whatsapp_notice_and_friday_keeps_the_form(self) -> None:
+        with patch.object(server, "WEDNESDAY_SIGNUP_PAUSED", True):
+            for path in ("/miercuri", "/miercuri/", "/miercuri?source=bookmark", "/wednesday", "/wednesday/"):
+                with self.subTest(path=path), patch.object(server.SimpleHTTPRequestHandler, "do_GET") as serve_page:
+                    handler = FakeAttendanceHandler(path)
+                    handler.do_GET()
+                    self.assertEqual(handler.path, "/wednesday-placeholder.html")
+                    serve_page.assert_called_once()
+            with patch.object(server.SimpleHTTPRequestHandler, "do_GET") as serve_page:
+                handler = FakeAttendanceHandler("/")
+                handler.do_GET()
+                self.assertEqual(handler.path, "/index.html")
+                serve_page.assert_called_once()
+
+    def test_wednesday_pause_overrides_all_signup_modes_without_an_automatic_reopen(self) -> None:
+        moment = datetime(2026, 10, 5, 20, 0, tzinfo=server.APP_TIMEZONE)
+        with patch.object(server, "WEDNESDAY_SIGNUP_PAUSED", True):
+            for mode in ("auto", "force_open", "force_closed"):
+                with self.subTest(mode=mode):
+                    server.set_setting("signup_mode_wednesday", mode)
+                    payload = server.signup_window_payload(moment, server.WEDNESDAY_EVENT)
+                    self.assertFalse(payload["isOpen"])
+                    self.assertEqual(payload["registrationPhase"], "closed")
+                    self.assertEqual(payload["message"], "Înscrierile s-au mutat pe WhatsApp.")
+                    self.assertIsNone(payload["nextOpen"])
+            server.set_setting("signup_mode", "force_open")
+            self.assertTrue(server.signup_window_payload(moment, server.FRIDAY_EVENT)["isOpen"])
+
+    def test_paused_wednesday_rejects_cached_forms_without_writing_players_or_charging_limits(self) -> None:
+        server.set_setting("signup_mode_wednesday", "force_open")
+        server.insert_registrations(["Existing Wednesday player"], self.week_key, server.WEDNESDAY_EVENT)
+        with patch.object(server, "WEDNESDAY_SIGNUP_PAUSED", True), patch("server.queue_match_notification") as notify:
+            for signup in ({"person1": "New player"}, {"memberId": server.WEDNESDAY_MEMBERS[0]["id"]}):
+                with self.subTest(signup=signup):
+                    status, payload, _ = self.dispatch("POST", "/api/registrations", {**signup, "event": "wednesday"})
+                    self.assertEqual(status, HTTPStatus.FORBIDDEN)
+                    self.assertEqual(payload["error"], "Înscrierile s-au mutat pe WhatsApp.")
+                    self.assertFalse(payload["signupWindow"]["isOpen"])
+                    self.assertNotIn("managementPath", payload)
+            self.assertEqual([row["name"] for row in server.fetch_registrations(self.week_key, server.WEDNESDAY_EVENT)], ["Existing Wednesday player"])
+            with server.get_connection() as connection:
+                self.assertEqual(connection.execute("SELECT COUNT(*) FROM registration_rate_limits").fetchone()[0], 0)
+            notify.assert_not_called()
+            status, payload, _ = self.dispatch("GET", "/api/registrations?event=wednesday")
+            self.assertEqual(status, HTTPStatus.OK)
+            self.assertFalse(payload["signupWindow"]["isOpen"])
+            self.assertEqual(payload["signupWindow"]["message"], "Înscrierile s-au mutat pe WhatsApp.")
+
+    def test_friday_signup_still_works_while_wednesday_is_paused(self) -> None:
+        server.set_setting("signup_mode", "force_open")
+        with patch.object(server, "WEDNESDAY_SIGNUP_PAUSED", True):
+            status, payload, _ = self.dispatch("POST", "/api/registrations", {"person1": "Friday player", "event": "friday"})
+        self.assertEqual(status, HTTPStatus.CREATED)
+        self.assertTrue(payload["signupWindow"]["isOpen"])
+        self.assertEqual([row["name"] for row in payload["registrations"]], ["Friday player"])
 
     def test_cache_policy_prevents_mixed_frontend_releases(self) -> None:
         self.assertEqual(server.cache_control_for_path("/api/registrations?event=friday"), "no-store")

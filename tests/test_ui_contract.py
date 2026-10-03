@@ -24,6 +24,27 @@ class IdCollector(HTMLParser):
 
 
 class FrontendContractTestCase(unittest.TestCase):
+    def test_day_tabs_are_removed_and_wednesday_has_an_accessible_full_page_notice(self) -> None:
+        attendance = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+        notice = (STATIC_DIR / "wednesday-placeholder.html").read_text(encoding="utf-8")
+        styles = (STATIC_DIR / "wednesday-placeholder.css").read_text(encoding="utf-8")
+        for removed in ("friday-event-link", "wednesday-event-link", 'class="event-nav"'):
+            self.assertNotIn(removed, attendance)
+            self.assertNotIn(removed, script)
+        parser = IdCollector()
+        parser.feed(notice)
+        self.assertEqual(len(parser.ids), len(set(parser.ids)))
+        self.assertIn('<html lang="ro" data-event="wednesday">', notice)
+        self.assertIn('aria-labelledby="whatsapp-notice-title"', notice)
+        self.assertIn('<h1 id="whatsapp-notice-title">Înscrierile s-au mutat pe WhatsApp</h1>', notice)
+        self.assertIn("Pentru moment, înscrie-te la meci în grupul de WhatsApp, ca înainte.", notice)
+        self.assertNotIn("<form", notice)
+        self.assertNotIn("<table", notice)
+        self.assertNotIn("/app.js", notice)
+        self.assertIn("min-height: 100svh", styles)
+        self.assertIn("width: min(100%, 760px)", styles)
+
     def test_second_player_field_is_optional_distinct_and_not_autofilled(self) -> None:
         source = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         self.assertIn("Numele primului jucător (ca în WhatsApp)", source)
@@ -104,11 +125,12 @@ class FrontendContractTestCase(unittest.TestCase):
         self.assertIn('addEventListener("controllerchange"', app_script)
         self.assertIn('/styles.css?v=20260924-3', attendance_page)
         self.assertIn('/ui-enhancements.css?v=20261001-2', attendance_page)
-        self.assertIn('/app.js?v=20261001-3', attendance_page)
+        self.assertIn('/app.js?v=20261001-4', attendance_page)
         management_page = (STATIC_DIR / "manage.html").read_text(encoding="utf-8")
         for page, script in ((attendance_page, "app.js"), (management_page, "manage.js")):
             store_script = '/management-store.js?v=20261001-3'
-            page_script = f'/{script}?v=20261001-3'
+            version = "20261001-4" if script == "app.js" else "20261001-3"
+            page_script = f'/{script}?v={version}'
             self.assertLess(page.index(store_script), page.index(page_script))
             self.assertIn(store_script, worker)
             self.assertIn(page_script, worker)

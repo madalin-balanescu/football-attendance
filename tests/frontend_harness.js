@@ -275,8 +275,6 @@ function buildAppDocument() {
   makeElement(document, "a", "match-location-link");
   makeElement(document, "span", "match-location-name");
   makeElement(document, "span", "locked-schedule-copy");
-  makeElement(document, "a", "friday-event-link");
-  makeElement(document, "a", "wednesday-event-link");
   makeElement(document, "a", "teams-page-link");
   const template = makeElement(document, "template", "empty-state-template");
   const row = new FakeElement("tr", document);

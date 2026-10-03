@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ro" data-event="wednesday">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#13875f" />
+    <meta name="description" content="Înscrierile la fotbalul de miercuri se fac în grupul de WhatsApp." />
+    <title>Înscrierile s-au mutat pe WhatsApp · Fotbal de miercuri</title>
+    <script>
+      (() => {
+        let storedTheme;
+        try { storedTheme = localStorage.getItem("theme"); } catch {}
+        document.documentElement.dataset.theme = storedTheme ||
+          (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      })();
+    </script>
+    <link rel="icon" href="/app-icon.svg?v=20260923-1" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css?v=20260924-3" />
+    <link rel="stylesheet" href="/wednesday-placeholder.css?v=20261001-4" />
+  </head>
+  <body class="whatsapp-notice-page">
+    <main class="whatsapp-notice" aria-labelledby="whatsapp-notice-title">
+      <div class="whatsapp-notice-icon" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M27 15a11 11 0 0 1-16 9.8L5 27l2.2-6A11 11 0 1 1 27 15Z" />
+          <path d="M11 14h10M11 18h6" />
+        </svg>
+      </div>
+      <p class="whatsapp-notice-kicker">Fotbal de miercuri</p>
+      <h1 id="whatsapp-notice-title">Înscrierile s-au mutat pe WhatsApp</h1>
+      <p class="whatsapp-notice-description">
+        Pentru moment, înscrie-te la meci în grupul de WhatsApp, ca înainte.
+      </p>
+    </main>
+    <script src="/wednesday-placeholder.js?v=20261001-4" defer></script>
+  </body>
+</html>

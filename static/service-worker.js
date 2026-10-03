@@ -1,9 +1,12 @@
 const CACHE_PREFIX = "football-attendance-";
-const CACHE_NAME = `${CACHE_PREFIX}v27`;
+const CACHE_NAME = `${CACHE_PREFIX}v28`;
 const ASSET_VERSION = "20260924-3";
 const APP_SHELL = [
   "/",
   "/miercuri",
+  "/wednesday-placeholder.html",
+  "/wednesday-placeholder.css?v=20261001-4",
+  "/wednesday-placeholder.js?v=20261001-4",
   "/echipe",
   "/manage.html",
   "/inscrierile-mele",
@@ -11,7 +14,7 @@ const APP_SHELL = [
   `/styles.css?v=${ASSET_VERSION}`,
   "/ui-enhancements.css?v=20261001-2",
   "/management-store.js?v=20261001-3",
-  "/app.js?v=20261001-3",
+  "/app.js?v=20261001-4",
   `/teams.js?v=${ASSET_VERSION}`,
   "/manage.js?v=20261001-3",
   `/history.js?v=${ASSET_VERSION}`,
@@ -71,6 +74,9 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(async () => {
+          if (["/miercuri", "/wednesday"].includes(url.pathname.replace(/\/+$/, ""))) {
+            return caches.match("/wednesday-placeholder.html");
+          }
           return (await caches.match(request)) || (await caches.match("/"));
         }),
     );

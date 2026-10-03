@@ -84,6 +84,8 @@ test("app.js bootstraps dashboard and clears boot state after initial fetches", 
   await flush();
 
   assert.equal(loaded.body.classList.contains("app-booting"), false);
+  assert.equal(loaded.getElementById("friday-event-link"), null);
+  assert.equal(loaded.getElementById("wednesday-event-link"), null);
   assert.equal(loaded.getElementById("week-label").textContent, "20 Mar 2026");
   assert.equal(loaded.getElementById("match-date-display").textContent, "20 Mar 2026");
   assert.equal(loaded.getElementById("confirmed-counter").textContent, "1 / 18");
@@ -471,10 +473,6 @@ test("app.js configures the Wednesday page and sends requests to the Wednesday e
   assert.equal(
     document.getElementById("schedule-callout").textContent,
     "Luni 19:30 – marți 12:00: membri WhatsApp. După 12:00: și jucători externi.",
-  );
-  assert.equal(
-    document.getElementById("wednesday-event-link").getAttribute("aria-current"),
-    "page",
   );
   assert.equal(document.getElementById("match-location-name").textContent, "D&C Sport - Siraj");
   assert.match(

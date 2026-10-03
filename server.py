@@ -77,6 +77,8 @@ ROLE_LABELS = {
 FRIDAY_EVENT = "friday"
 WEDNESDAY_EVENT = "wednesday"
 EVENT_KEYS = {FRIDAY_EVENT, WEDNESDAY_EVENT}
+WEDNESDAY_SIGNUP_PAUSED = True
+WEDNESDAY_SIGNUP_NOTICE = "Înscrierile s-au mutat pe WhatsApp."
 ROMANIAN_MONTHS = (
     "",
     "Ian",
@@ -769,6 +771,10 @@ def signup_window_payload(
     else:
         is_open = schedule_open
 
+    moved_to_whatsapp = event_key == WEDNESDAY_EVENT and WEDNESDAY_SIGNUP_PAUSED
+    if moved_to_whatsapp:
+        is_open = False
+
     member_only_until = (
         wednesday_member_only_until(week_key) if event_key == WEDNESDAY_EVENT else None
     )
@@ -787,7 +793,9 @@ def signup_window_payload(
         next_week_time = current_time + timedelta(days=7)
         next_open, _ = signup_window_for_week(current_week_key(next_week_time), event_key)
 
-    if current_mode == "force_closed":
+    if moved_to_whatsapp:
+        message = WEDNESDAY_SIGNUP_NOTICE
+    elif current_mode == "force_closed":
         message = "Înscrierile sunt oprite manual de administrator."
     elif current_mode == "force_open":
         message = "Înscrierile sunt deschise manual de administrator."
@@ -832,7 +840,7 @@ def signup_window_payload(
         "message": message,
         "start": start.isoformat(),
         "end": end.isoformat(),
-        "nextOpen": next_open.isoformat(),
+        "nextOpen": None if moved_to_whatsapp else next_open.isoformat(),
         "serverNow": current_time.isoformat(),
         "timezone": "Europe/Bucharest",
         "event": event_key,
@@ -2311,6 +2319,9 @@ class AttendanceHandler(SimpleHTTPRequestHandler):
             return super().do_GET()
         if parsed.path in {"/inscrierile-mele", "/inscrierile-mele/"} or re.fullmatch(r"/inscriere/[A-Za-z0-9_-]{43,128}/?", parsed.path):
             self.path = "/manage.html"
+            return super().do_GET()
+        if parsed.path in {"/miercuri", "/miercuri/", "/wednesday", "/wednesday/"} and WEDNESDAY_SIGNUP_PAUSED:
+            self.path = "/wednesday-placeholder.html"
             return super().do_GET()
         if parsed.path in {"/", "/miercuri", "/miercuri/", "/wednesday", "/wednesday/"}:
             self.path = "/index.html"
